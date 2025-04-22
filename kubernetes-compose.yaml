@@ -4,7 +4,161 @@ metadata:
   name: multi-container-pod
 spec:
   containers:
-    - name: frontend
-      image: nginx
-    - name: backend
-      image: python
+    - name: zookeeper
+      image: confluentinc/cp-zookeeper:6.1.1
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "500m"
+        limits:
+          memory: "1Gi"
+          cpu: "1"
+      livenessProbe:
+        tcpSocket:
+          port: 2181
+        initialDelaySeconds: 30
+        periodSeconds: 10
+      readinessProbe:
+        tcpSocket:
+          port: 2181
+        initialDelaySeconds: 10
+        periodSeconds: 5
+
+    - name: apache-kafka
+      image: apache/kafka:latest
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "500m"
+        limits:
+          memory: "1Gi"
+          cpu: "1"
+      livenessProbe:
+        tcpSocket:
+          port: 9092
+        initialDelaySeconds: 30
+        periodSeconds: 10
+      readinessProbe:
+        tcpSocket:
+          port: 9092
+        initialDelaySeconds: 10
+        periodSeconds: 5
+
+    - name: python-backend
+      image: python:latest
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "250m"
+        limits:
+          memory: "512Mi"
+          cpu: "500m"
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 5000
+        initialDelaySeconds: 30
+        periodSeconds: 10
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 5000
+        initialDelaySeconds: 10
+        periodSeconds: 5
+
+    - name: mongo-db
+      image: mongodb:latest
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "500m"
+        limits:
+          memory: "1Gi"
+          cpu: "1"
+      livenessProbe:
+        exec:
+          command: ["mongo", "--eval", "db.runCommand({ ping: 1 })"]
+        initialDelaySeconds: 30
+        periodSeconds: 10
+      readinessProbe:
+        exec:
+          command: ["mongo", "--eval", "db.runCommand({ ping: 1 })"]
+        initialDelaySeconds: 10
+        periodSeconds: 5
+
+    - name: mysql
+      image: mysql:latest
+      env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "yourpassword"  # Change this to a secure password
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "500m"
+        limits:
+          memory: "1Gi"
+          cpu: "1"
+      livenessProbe:
+        tcpSocket:
+          port: 3306
+        initialDelaySeconds: 30
+        periodSeconds: 10
+      readinessProbe:
+        tcpSocket:
+          port: 3306
+        initialDelaySeconds: 10
+        periodSeconds: 5
+
+    - name: jenkins
+      image: jenkins:latest
+      resources:
+        requests:
+          memory: "1Gi"
+          cpu: "500m"
+        limits:
+          memory: "2Gi"
+          cpu: "1"
+      livenessProbe:
+        httpGet:
+          path: /login
+          port: 8080
+        initialDelaySeconds: 30
+        periodSeconds: 10
+      readinessProbe:
+        httpGet:
+          path: /login
+          port: 8080
+        initialDelaySeconds: 10
+        periodSeconds: 5
+
+    - name: grafana
+      image: grafana:latest
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "250m"
+        limits:
+          memory: "512Mi"
+          cpu: "500m"
+      livenessProbe:
+        httpGet:
+          path: /api/health
+          port: 3000
+        initialDelaySeconds: 30
+        periodSeconds: 10
+      readinessProbe:
+        httpGet:
+          path: /api/health
+          port: 3000
+        initialDelaySeconds: 10
+        periodSeconds: 5
+
+    - name: prometheus
+      image: prometheus:latest
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "250m"
+        limits:
+          memory: "512Mi"
+         
