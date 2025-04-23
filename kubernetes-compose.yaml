@@ -13,6 +13,11 @@ spec:
         limits:
           memory: "1Gi"
           cpu: "1"
+      env:
+        - name: ZOOKEEPER_CLIENT_PORT
+          value: "2181"
+        - name: ZOOKEEPER_TICK_TIME
+          value: "2000"
       livenessProbe:
         tcpSocket:
           port: 2181
@@ -46,6 +51,8 @@ spec:
 
     - name: python-backend
       image: python:latest
+      command: ["python"]
+      args: ["-c", "import time; time.sleep(999999)"] #place holder so cluster doesn't crashing and restarting
       resources:
         requests:
           memory: "256Mi"
@@ -67,7 +74,7 @@ spec:
         periodSeconds: 5
 
     - name: mongo-db
-      image: mongodb:latest
+      image: mongo:latest
       resources:
         requests:
           memory: "512Mi"
@@ -110,7 +117,10 @@ spec:
         periodSeconds: 5
 
     - name: jenkins
-      image: jenkins:latest
+      image: jenkins/jenkins:lts
+      args: ["--httpPort=8081"]
+      ports:
+        - containerPort: 8081
       resources:
         requests:
           memory: "1Gi"
@@ -121,18 +131,19 @@ spec:
       livenessProbe:
         httpGet:
           path: /login
-          port: 8080
+          port: 8081
         initialDelaySeconds: 30
         periodSeconds: 10
       readinessProbe:
         httpGet:
           path: /login
-          port: 8080
+          port: 8081
         initialDelaySeconds: 10
         periodSeconds: 5
 
+
     - name: grafana
-      image: grafana:latest
+      image: grafana/grafana:latest
       resources:
         requests:
           memory: "256Mi"
@@ -154,7 +165,7 @@ spec:
         periodSeconds: 5
 
     - name: prometheus
-      image: prometheus:latest
+      image: prom/prometheus:latest
       resources:
         requests:
           memory: "256Mi"
