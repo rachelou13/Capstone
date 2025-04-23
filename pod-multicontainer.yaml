@@ -97,7 +97,7 @@ spec:
       image: mysql:latest
       env:
         - name: MYSQL_ROOT_PASSWORD
-          value: "yourpassword"  # Change this to a secure password
+          value: "admin"  
       resources:
         requests:
           memory: "512Mi"
