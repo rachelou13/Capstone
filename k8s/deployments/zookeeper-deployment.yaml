@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: zookeeper
+  labels:
+    app: zookeeper
 spec:
   replicas: 1
   selector:
@@ -13,7 +15,9 @@ spec:
         app: zookeeper
     spec:
       containers:
-      - name: zookeeper
-        image: zookeeper:3.8
-        ports:
-        - containerPort: 2181
+        - name: zookeeper
+          image: zookeeper:3.8
+          ports:
+            - name: client
+              containerPort: 2181
+

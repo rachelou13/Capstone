@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: app
+  labels:
+    app: app
 spec:
   replicas: 1
   selector:
@@ -13,8 +15,9 @@ spec:
         app: app
     spec:
       containers:
-      - name: app
-        image: capstone-app:v2
-        imagePullPolicy: Never
-        ports:
-        - containerPort: 8000
+        - name: app
+          image: capstone-app:v2
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8000
