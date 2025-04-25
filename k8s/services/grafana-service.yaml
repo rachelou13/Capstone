@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    app: grafana
+spec:
+  type: NodePort  # Use LoadBalancer if on cloud
+  selector:
+    app: grafana
+  ports:
+    - protocol: TCP
+      port: 80        # What other services/users will access
+      targetPort: 3000  # Port Grafana listens on inside the container
+      nodePort: 32000   # Optional: expose on this port on your machine
