@@ -93,30 +93,30 @@ spec:
         initialDelaySeconds: 10
         periodSeconds: 5
 
-    - name: jenkins
-      image: jenkins/jenkins:lts
-      args: ["--httpPort=8081"]
-      ports:
-        - containerPort: 8081
-      resources:
-        requests:
-          memory: "1Gi"
-          cpu: "500m"
-        limits:
-          memory: "2Gi"
-          cpu: "1"
-      livenessProbe:
-        httpGet:
-          path: /login
-          port: 8081
-        initialDelaySeconds: 30
-        periodSeconds: 10
-      readinessProbe:
-        httpGet:
-          path: /login
-          port: 8081
-        initialDelaySeconds: 10
-        periodSeconds: 5
+    # - name: jenkins
+    #   image: jenkins/jenkins:lts
+    #   args: ["--httpPort=8081"]
+    #   ports:
+    #     - containerPort: 8081
+    #   resources:
+    #     requests:
+    #       memory: "1Gi"
+    #       cpu: "500m"
+    #     limits:
+    #       memory: "2Gi"
+    #       cpu: "1"
+    #   livenessProbe:
+    #     httpGet:
+    #       path: /login
+    #       port: 8081
+    #     initialDelaySeconds: 30
+    #     periodSeconds: 10
+    #   readinessProbe:
+    #     httpGet:
+    #       path: /login
+    #       port: 8081
+    #     initialDelaySeconds: 10
+    #     periodSeconds: 5
 
 
     - name: grafana
