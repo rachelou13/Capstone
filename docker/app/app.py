@@ -45,18 +45,18 @@ def monitor_and_failover():
     global current_host
 
     # Variable for the connection to our database
-    conn = None
+    connection = None
 
     while True:
         print(f"Trying {current_host}...")
 
         # Try to connect
-        conn = connect_to_database(current_host)
+        connection = connect_to_database(current_host)
 
-        # If it connects, then wait 10 seconds and try againi
-        if conn:
+        # If it connects, then wait 10 seconds and try again
+        if connection:
             try:
-                cursor = conn.cursor()
+                cursor = connection.cursor()
                 cursor.execute("SELECT 1")
                 print("DB is alive")
 
@@ -65,7 +65,7 @@ def monitor_and_failover():
 
             except Error as e:
                 print(f"Error: {e}, switching...")
-                conn.close()
+                connection.close()
                 current_host = REPLICA_HOST if current_host == PRIMARY_HOST else PRIMARY_HOST
 
         # If database is down, then switch to our replica
