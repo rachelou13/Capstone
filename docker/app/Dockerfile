@@ -1,10 +1,11 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY . .
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-RUN pip install --no-cache-dir -r requirements.txt || true
+COPY docker/app/my-service.py .
 
 CMD ["python", "my-service.py"]
 
