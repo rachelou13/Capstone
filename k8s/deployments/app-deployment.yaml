@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: app
-          image: capstone-app:v2
+          image: capstone-app:v3
           imagePullPolicy: Never
           ports:
             - name: http
