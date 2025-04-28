@@ -7,5 +7,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY docker/app/my-service.py .
 
-CMD ["python", "my-service.py"]
+CMD ["python", "mysql-proxy-server.py"]
 
