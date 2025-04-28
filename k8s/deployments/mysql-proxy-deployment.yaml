@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: mysql
   labels:
@@ -25,3 +25,7 @@ spec:
               value: "root"
             - name: MYSQL_DATABASE
               value: "capstone_db"
+
+        - name: mysql-primary
+
+        - name: mysql-replica
