@@ -1,0 +1,140 @@
+# Primary database
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  labels:
+    app: mysql-proxy-servers
+    role: primary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+      role: primary
+  template:
+    metadata:
+      labels:
+        app: mysql
+        role: primary
+    spec:
+      containers:
+        - name: mysql-primary
+          image: mysql:8.0
+          ports:
+            - name: mysql
+              containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: "root"
+            - name: MYSQL_DATABASE
+              value: "capstone_db"
+            - name: MYSQL_ROOT_HOST
+              value: "%"
+            - name: MYSQL_REPLICATION_USER
+              value: "replica_user"
+            - name: MYSQL_REPLICATION_PASSWORD
+              value: "replica_password"
+            - name: MYSQL_LOG_BIN
+              value: "mysql-bin"
+            - name: MYSQL_SERVER_ID
+              value: "1"
+          volumeMounts:
+            - name: mysql-primary-data
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-primary-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+
+# This one is the replica database
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-replica
+  labels:
+    app: mysql
+    role: replica
+spec:
+  serviceName: "mysql-replica"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+      role: replica
+  template:
+    metadata:
+      labels:
+        app: mysql
+        role: replica
+    spec:
+      containers:
+        - name: mysql-replica
+          image: mysql:8.0
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: "root"
+            - name: MYSQL_REPLICATION_USER
+              value: "replica_user"
+            - name: MYSQL_REPLICATION_PASSWORD
+              value: "replica_password"
+            - name: MYSQL_MASTER_HOST
+              value: "mysql-primary"
+            - name: MYSQL_MASTER_PORT
+              value: "3306" 
+            - name: MYSQL_REPLICATION_MODE
+              value: "slave"
+          volumeMounts:
+            - name: mysql-replica-data
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-replica-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+
+# This one is for our summary records
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-summary-records
+  labels:
+    app: mysql-summary-records
+
+
+---
+# mysql-primary-pvc
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-primary-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# mysql-replica-pvc
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-replica-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
