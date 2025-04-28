@@ -1,0 +1,15 @@
+# k8s/services/mysqld-exporter-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysqld-exporter
+  labels:
+    app: mysqld-exporter
+spec:
+  selector:
+    app: mysqld-exporter
+  ports:
+    - name: metrics
+      port: 9104
+      targetPort: 9104
+  type: ClusterIP

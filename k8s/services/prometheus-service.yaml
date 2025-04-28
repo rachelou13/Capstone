@@ -5,10 +5,11 @@ metadata:
   labels:
     app: prometheus
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: prometheus
   ports:
     - protocol: TCP
       port: 80
       targetPort: 9090
+      nodePort: 32090

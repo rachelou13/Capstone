@@ -1,0 +1,26 @@
+# k8s/deployments/mongodb-exporter-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-exporter
+  labels:
+    app: mongodb-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb-exporter
+  template:
+    metadata:
+      labels:
+        app: mongodb-exporter
+    spec:
+      containers:
+        - name: mongodb-exporter
+          image: bitnami/mongodb-exporter:latest
+          env:
+            - name: MONGODB_URI
+              # root:password@mongodb:27017  → adjust to your creds/secret
+              value: "mongodb://root:password@mongodb:27017"
+          ports:
+            - containerPort: 9216

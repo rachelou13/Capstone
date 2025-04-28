@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         app: mongodb
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "27017"
     spec:
       containers:
         - name: mongodb

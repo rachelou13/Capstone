@@ -14,8 +14,16 @@ spec:
       labels:
         app: prometheus
     spec:
+      serviceAccountName: prometheus-sa
       containers:
         - name: prometheus
           image: prom/prometheus:latest
           ports:
             - containerPort: 9090
+          volumeMounts:
+            - name: prometheus-config-volume
+              mountPath: /etc/prometheus/ # Important: this is where Prometheus looks for prometheus.yml
+      volumes:
+        - name: prometheus-config-volume
+          configMap:
+            name: prometheus-config # This must match the ConfigMap name you create

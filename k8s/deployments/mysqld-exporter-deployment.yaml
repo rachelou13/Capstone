@@ -1,0 +1,32 @@
+# k8s/deployments/mysqld-exporter-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysqld-exporter
+  labels:
+    app: mysqld-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysqld-exporter
+  template:
+    metadata:
+      labels:
+        app: mysqld-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "9104"
+        prometheus.io/path:   "/metrics"
+    spec:
+      containers:
+        - name: mysqld-exporter
+          image: prom/mysqld-exporter:latest
+          args:
+            - "--collect.global_status"
+          env:
+            - name: DATA_SOURCE_NAME
+              # root: root@(mysql:3306)/  → adjust to your creds & DB
+              value: "root:root@(mysql:3306)/"
+          ports:
+            - containerPort: 9104
