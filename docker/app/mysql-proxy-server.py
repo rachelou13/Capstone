@@ -148,4 +148,8 @@ def start_proxy():
 
 # Initiates our driver code
 if __name__ == "__main__":
-    monitor_and_failover()
+    # This one monitors the primary client to see if it's active and healthy
+    threading.Thread(target=monitor_and_failover, daemon=True).start()
+
+    # This allows clients to proxy through our program and communicate through the socket, the thread above automatically switches the db
+    start_proxy()
