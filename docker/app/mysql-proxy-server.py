@@ -1,6 +1,11 @@
 import time
 import mysql.connector
 from mysql.connector import Error
+import socket
+import threading
+
+# The port for our proxy
+PROXY_PORT = 3307
 
 # Some global variables for our db names
 PRIMARY_HOST = "mysql-primary" 
@@ -21,10 +26,8 @@ This function connects to a database based on the host we pass into it. It uses 
 """
 def connect_to_database(host):
     try:
-        conn = mysql.connector.connect(
-            host=host,
-            **DB_CONFIG
-        )
+        conn = mysql.connector.connect(host=host,**DB_CONFIG)
+
         if conn.is_connected():
             print(f"Connected to {host}")
             return conn
@@ -78,6 +81,69 @@ def monitor_and_failover():
         time.sleep(5)
 
 #*****************************************************************************************************************************************************
+
+"""
+This function handles the between the client and the database by opening a socket 
+
+"""
+def handle_client(client_socket):
+
+    # Our global variable that tells us what host to connect to based on if the primary one is down
+    global current_host
+
+    try:
+        # Connect to the current healthy database
+        db_socket = socket.create_connection((current_host, 3306))
+
+        # Now forward data in both directions
+        def forward(source, destination):
+            while True:
+                data = source.recv(4096)
+                if not data:
+                    break
+                destination.sendall(data)
+        
+        # So client can sent queries to db (takes data from client and sends it to db)
+        threading.Thread(target=forward, args=(client_socket, db_socket)).start()
+
+        # So client can recieve responses from the db (taks data from db and sends to client)
+        threading.Thread(target=forward, args=(db_socket, client_socket)).start()
+
+    # if failed, throw an error and close the socket
+    except Exception as e:
+        print(f"Connection failed: {e}")
+        client_socket.close()
+
+#*****************************************************************************************************************************************************
+
+def start_proxy():
+    # Create a socket that accepts IPv4 addresses through TCP
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    # Listen for all IP addresses on our proxy port
+    server.bind(("", PROXY_PORT))
+
+    # Max queued connections
+    server.listen(5)
+
+    print(f"Proxy listening on port {PROXY_PORT}")
+
+    while True:
+        # wait for a client to connect (this blocks the loop btw)
+        client_socket, client_address = server.accept()
+
+        print(f"Accepted connection from {client_address}")
+
+        # use the handle client function which we made to allow the client to connect to the db
+        client_handler = threading.Thread(target=handle_client, args=(client_socket,))
+
+        # Start the thread
+        client_handler.start()
+
+
+
+
+
 # Initiates our driver code
 if __name__ == "__main__":
     monitor_and_failover()
