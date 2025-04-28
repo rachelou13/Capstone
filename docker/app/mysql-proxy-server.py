@@ -115,7 +115,9 @@ def handle_client(client_socket):
         client_socket.close()
 
 #*****************************************************************************************************************************************************
-
+"""
+This function starts the proxy server and listens for connections, if one is created, then a thread is created to handle that client
+"""
 def start_proxy():
     # Create a socket that accepts IPv4 addresses through TCP
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
