@@ -1,24 +1,24 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: mysql
+  name: mysql-proxy-servers
   labels:
-    app: mysql
+    app: mysql-proxy-servers
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mysql
+      app: mysql-proxy-servers
   template:
     metadata:
       labels:
-        app: mysql
+        app: mysql-proxy-servers
     spec:
       containers:
-        - name: mysql
+        - name: mysql-primary
           image: mysql:8.0
           ports:
-            - name: mysql
+            - name: mysql-proxy-servers
               containerPort: 3306
           env:
             - name: MYSQL_ROOT_PASSWORD
@@ -26,6 +26,14 @@ spec:
             - name: MYSQL_DATABASE
               value: "capstone_db"
 
-        - name: mysql-primary
-
         - name: mysql-replica
+
+
+# This one is for our summary records
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-summary-records
+  labels:
+    app: mysql-summary-records
