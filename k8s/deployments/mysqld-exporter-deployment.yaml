@@ -23,10 +23,20 @@ spec:
         - name: mysqld-exporter
           image: prom/mysqld-exporter:latest
           args:
+            - "--config.my-cnf=/etc/.my.cnf"
             - "--collect.global_status"
-          env:
-            - name: DATA_SOURCE_NAME
-              # root: root@(mysql:3306)/  → adjust to your creds & DB
-              value: "root:root@(mysql:3306)/"
+            - "--collect.info_schema.innodb_metrics"
           ports:
             - containerPort: 9104
+              name: metrics
+          volumeMounts:
+            - name: mycnf
+              mountPath: "/etc/.my.cnf"
+              subPath: ".my.cnf"
+      volumes:
+        - name: mycnf
+          secret:
+            secretName: mysql-client-cnf
+            items:
+              - key: .my.cnf
+                path: .my.cnf
