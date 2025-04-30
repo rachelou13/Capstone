@@ -36,6 +36,29 @@ def connect_to_database(host):
     return None
 
 #*****************************************************************************************************************************************************
+
+def switch_to_other():
+    global current_host
+
+    other_host = REPLICA_HOST if current_host == PRIMARY_HOST else PRIMARY_HOST
+
+    # Try connecting to the other host
+    if connect_to_database(other_host):
+        # Promote new one if it's not already master
+        if other_host == REPLICA_HOST:
+            print("Promoting replica...")
+            promote_to_primary(REPLICA_HOST)
+        else:
+            print("Primary is back — reconfiguring it as replica")
+            configure_as_replica(PRIMARY_HOST, REPLICA_HOST)
+
+        current_host = other_host
+        print(f"Now using {current_host} as active DB")
+
+    else:
+        print(f"Could not connect to either DB. Waiting...")
+
+#*****************************************************************************************************************************************************
 """
 This function is our main driver code that is called
 
@@ -44,41 +67,31 @@ It checks if the primary host is up every 10 seconds.
 If it isn't, it then switches to the replica host ensuring high avalibility
 """
 def monitor_and_failover():
-    # Grab the current host
     global current_host
 
-    # Variable for the connection to our database
-    connection = None
-
     while True:
-        print(f"Trying {current_host}...")
+        print(f"Checking {current_host}...")
 
-        # Try to connect
         connection = connect_to_database(current_host)
 
-        # If it connects, then wait 10 seconds and try again
         if connection:
             try:
                 cursor = connection.cursor()
                 cursor.execute("SELECT 1")
-                print("DB is alive")
-
-                # Wait a bit before next check
+                print(f"{current_host} is alive")
                 time.sleep(10)
 
             except Error as e:
-                print(f"Error: {e}, switching...")
+                print(f"DB error on {current_host}: {e}")
                 connection.close()
-                current_host = REPLICA_HOST if current_host == PRIMARY_HOST else PRIMARY_HOST
+                switch_to_other()
 
-        # If database is down, then switch to our replica
         else:
-            print(f"Connection failed. Switching...")
-
-            # Set the current host to the replica if our current host is the primary since it would be the one that failed. If it isn't then we set it back to primary since the replica must've failed
-            current_host = REPLICA_HOST if current_host == PRIMARY_HOST else PRIMARY_HOST
+            print(f"Connection failed for {current_host}. Switching...")
+            switch_to_other()
 
         time.sleep(5)
+
 
 #*****************************************************************************************************************************************************
 
@@ -141,8 +154,38 @@ def start_proxy():
 
         # Start the thread
         client_handler.start()
+#*****************************************************************************************************************************************************
+
+def promote_to_primary(host):
+    try:
+        conn = mysql.connector.connect(host=host, user="root", password="admin")
+        cursor = conn.cursor()
+        cursor.execute("STOP SLAVE;")
+        cursor.execute("RESET SLAVE ALL;")
+        cursor.execute("SET GLOBAL read_only = OFF;")
+        conn.close()
+        print(f"Promoted {host} to primary")
+    except Error as e:
+        print(f"Failed to promote {host} to primary: {e}")
+
+#*****************************************************************************************************************************************************
+def configure_as_replica(replica_host, master_host):
+    conn = mysql.connector.connect(host=replica_host, user="root", password="admin")
+    cursor = conn.cursor()
+    cursor.execute("STOP SLAVE;")
+    cursor.execute(f"""
+        CHANGE MASTER TO
+          MASTER_HOST='{master_host}',
+          MASTER_USER='replica_user',
+          MASTER_PASSWORD='replica_password',
+          MASTER_AUTO_POSITION=1;
+    """)
+    cursor.execute("START SLAVE;")
+    conn.close()
+    print(f"Configured {replica_host} as replica of {master_host}")
 
 
+#*****************************************************************************************************************************************************
 # Initiates our driver code
 if __name__ == "__main__":
     # This one monitors the primary client to see if it's active and healthy

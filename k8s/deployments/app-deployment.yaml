@@ -1,26 +1,32 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: app
+  name: python-proxy-app
   labels:
-    app: app
+    app: python-proxy
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: app
+      app: python-proxy
   template:
     metadata:
       labels:
-        app: app
+        app: python-proxy
     spec:
       containers:
-        - name: app
-          image: capstone-app:v3
-          imagePullPolicy: Never
+        - name: python-proxy-container
+          image: lukasmccain0/capstone-app:latest
           ports:
-            - name: http
-              containerPort: 8000
-          envFrom:
-            - configMapRef:
-                name: app-config
+            - name: tcp-proxy
+              containerPort: 3307
+          livenessProbe:
+            tcpSocket:
+              port: 3307
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: 3307
+            initialDelaySeconds: 5
+            periodSeconds: 5
