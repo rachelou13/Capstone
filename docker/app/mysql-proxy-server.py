@@ -15,7 +15,7 @@ REPLICA_HOST = "mysql-replica"
 DB_CONFIG = {
     "user": "root",
     "password": "admin",
-    "database": "" # The name of the database goes here
+    "database": "capstone_db"
 }
 
 # Set the primary host as the default
@@ -141,9 +141,6 @@ def start_proxy():
 
         # Start the thread
         client_handler.start()
-
-
-
 
 
 # Initiates our driver code

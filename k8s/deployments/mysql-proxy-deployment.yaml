@@ -111,6 +111,40 @@ metadata:
   name: mysql-summary-records
   labels:
     app: mysql-summary-records
+spec:
+  serviceName: "mysql-summary-records"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-summary-records
+  template:
+    metadata:
+      labels:
+        app: mysql-summary-records
+    spec:
+      containers:
+        - name: mysql-summary-records
+          image: mysql:8.0
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: "root"
+            - name: MYSQL_DATABASE
+              value: "summary_db"
+            - name: MYSQL_ROOT_HOST
+              value: "%"
+          volumeMounts:
+            - name: mysql-summary-records-data
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-summary-records-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
 
 
 ---
