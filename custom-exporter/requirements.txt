@@ -1,0 +1,3 @@
+pymongo
+flask
+mysql-connector-python

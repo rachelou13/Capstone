@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provisioning
+data:
+  grafana-dashboard-provisioning.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'capstone'
+        folder: 'Capstone'
+        type: file
+        options:
+          path: /etc/grafana/provisioning/dashboards/json

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: capstone-exporter
+spec:
+  selector:
+    app: capstone-exporter
+  ports:
+    - port: 5000
+      targetPort: 5000

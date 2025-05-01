@@ -1,3 +1,5 @@
 kafka-python==2.1.5
 mysql-connector-python==9.3.0
 psutil==7.0.0
+pymongo
+flask
