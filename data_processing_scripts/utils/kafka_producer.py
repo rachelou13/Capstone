@@ -8,8 +8,8 @@ from kafka.errors import NoBrokersAvailable, KafkaError
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class ChaosKafkaProducer:
-    #Class for producing Kafka messages for chaos events
+class DataKafkaProducer:
+    #Class for producing Kafka messages for infrastructure metrics
     def __init__(self, brokers=None, topic=None):
         self.brokers = brokers if brokers else os.environ['DEFAULT_KAFKA_BROKERS']
         self.topic = topic if topic else os.environ['DEFAULT_KAFKA_TOPIC']
@@ -23,7 +23,7 @@ class ChaosKafkaProducer:
             self.producer = KafkaProducer (
                bootstrap_servers = self.brokers,
                value_serializer = lambda v: json.dumps(v).encode('utf-8'),
-               client_id = 'chaos-experiments-producer'
+               client_id = 'infra-metrics-producer'
             )
             self.connected = True
             logger.info(f"Kafka producer successfully connected to {self.brokers}")
