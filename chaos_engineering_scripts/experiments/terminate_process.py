@@ -1,7 +1,7 @@
 import logging
 import psutil
 import argparse
-from ..utils.kafka_producer import ChaosKafkaProducer
+from chaos_engineering_scripts.utils.kafka_producer import ChaosKafkaProducer
 import uuid
 from datetime import datetime, timezone
 import os
@@ -64,31 +64,41 @@ def main():
             "target": target
         }
     }
-    kafka_prod.send_event(start_event)
 
-    find_and_terminate_process(target)
+    #Kafka producer send event function returns True if successful, False if failed
+    if not kafka_prod.send_event(start_event):
+        logger.warning(f"Failed to send start event to Kafka. See log for error.")
 
-    #Send end event to kafka
-    end_time = datetime.now(timezone.utc)
-    end_event = {
-        "timestamp": end_time.isoformat(),
-        "experiment_id": experiment_id,
-        "event_type": "end",
-        "experiment_type": "terminate_process",
-        "parameters": {
-            "target": target
-        },
-        "success": process_terminated,
-        "duration": (end_time - start_time).total_seconds()
-    }
+    try:
+        find_and_terminate_process(target)
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while terminating process(es): {e}")
+    #Ensure end event is always sent, kafka producer is always closed
+    finally:
+        #Send end event to kafka
+        end_time = datetime.now(timezone.utc)
+        end_event = {
+            "timestamp": end_time.isoformat(),
+            "experiment_id": experiment_id,
+            "event_type": "end",
+            "experiment_type": "terminate_process",
+            "parameters": {
+                "target": target
+            },
+            "success": process_terminated,
+            "duration": (end_time - start_time).total_seconds()
+        }
 
-    kafka_prod.send_event(end_event)
-    kafka_prod.close()
+        #Kafka producer send event function returns True if successful, False if failed
+        if not kafka_prod.send_event(end_event):
+                logger.warning(f"Failed to end start event to Kafka. See log for error.")
 
-    if not process_terminated:
-        logger.warning(f"No running processes found matching '{target}' (or failed to terminate processes)")
-    else:
-        logger.info(f"Finished finding and terminating processes matching '{target}'")
+        kafka_prod.close()
+
+        if not process_terminated:
+            logger.warning(f"No running processes found matching '{target}' (or failed to terminate processes)")
+        else:
+            logger.info(f"Finished finding and terminating processes matching '{target}'")
 
 if __name__ == "__main__":
     main()
