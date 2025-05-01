@@ -1,12 +1,15 @@
-# Primary database
+# ----------------------------------------
+# PRIMARY MYSQL DATABASE (mysql-primary)
+# ----------------------------------------
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: mysql
+  name: mysql-primary
   labels:
-    app: mysql-proxy-servers
+    app: mysql
     role: primary
 spec:
+  serviceName: mysql-primary
   replicas: 1
   selector:
     matchLabels:
@@ -19,40 +22,33 @@ spec:
         role: primary
     spec:
       containers:
-        - name: mysql-primary
+        - name: mysql
           image: lukasmccain0/mysql:8.0
           ports:
-            - name: mysql
-              containerPort: 3306
+            - containerPort: 3306
           env:
             - name: MYSQL_ROOT_PASSWORD
-              value: "root"
+              value: "admin"
             - name: MYSQL_DATABASE
               value: "capstone_db"
             - name: MYSQL_ROOT_HOST
               value: "%"
-            - name: MYSQL_REPLICATION_USER
-              value: "replica_user"
-            - name: MYSQL_REPLICATION_PASSWORD
-              value: "replica_password"
-            - name: MYSQL_LOG_BIN
-              value: "mysql-bin"
-            - name: MYSQL_SERVER_ID
-              value: "1"
           volumeMounts:
-            - name: mysql-primary-data
+            - name: mysql-data
               mountPath: /var/lib/mysql
   volumeClaimTemplates:
     - metadata:
-        name: mysql-primary-data
+        name: mysql-data
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
             storage: 1Gi
 
-# This one is the replica database, the env variables dont initialize it to be a replica that what the script is for
 ---
+# ----------------------------------------
+# REPLICA MYSQL DATABASE (mysql-replica)
+# ----------------------------------------
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -61,7 +57,7 @@ metadata:
     app: mysql
     role: replica
 spec:
-  serviceName: "mysql-replica"
+  serviceName: mysql-replica
   replicas: 1
   selector:
     matchLabels:
@@ -74,37 +70,34 @@ spec:
         role: replica
     spec:
       containers:
-        - name: mysql-replica
+        - name: mysql
           image: lukasmccain0/mysql:8.0
           ports:
             - containerPort: 3306
           env:
             - name: MYSQL_ROOT_PASSWORD
-              value: "root"
-            - name: MYSQL_REPLICATION_USER
-              value: "replica_user"
-            - name: MYSQL_REPLICATION_PASSWORD
-              value: "replica_password"
-            - name: MYSQL_MASTER_HOST
-              value: "mysql-primary"
-            - name: MYSQL_MASTER_PORT
-              value: "3306" 
-            - name: MYSQL_REPLICATION_MODE
-              value: "slave"
+              value: "admin"
+            - name: MYSQL_DATABASE
+              value: "capstone_db"
+            - name: MYSQL_ROOT_HOST
+              value: "%"
           volumeMounts:
-            - name: mysql-replica-data
+            - name: mysql-data
               mountPath: /var/lib/mysql
   volumeClaimTemplates:
     - metadata:
-        name: mysql-replica-data
+        name: mysql-data
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
             storage: 1Gi
 
-# This one is for our summary records
 ---
+
+# ----------------------------------------
+# SUMMARY MYSQL DATABASE (mysql-summary-records)
+# ----------------------------------------
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -112,7 +105,7 @@ metadata:
   labels:
     app: mysql-summary-records
 spec:
-  serviceName: "mysql-summary-records"
+  serviceName: mysql-summary-records
   replicas: 1
   selector:
     matchLabels:
@@ -123,7 +116,7 @@ spec:
         app: mysql-summary-records
     spec:
       containers:
-        - name: mysql-summary-records
+        - name: mysql
           image: mysql:8.0
           ports:
             - containerPort: 3306
@@ -135,11 +128,11 @@ spec:
             - name: MYSQL_ROOT_HOST
               value: "%"
           volumeMounts:
-            - name: mysql-summary-records-data
+            - name: mysql-data
               mountPath: /var/lib/mysql
   volumeClaimTemplates:
     - metadata:
-        name: mysql-summary-records-data
+        name: mysql-data
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:
