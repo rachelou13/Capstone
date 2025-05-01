@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: python-proxy-app
+  namespace: staging
   labels:
     app: python-proxy
 spec:
@@ -20,6 +21,20 @@ spec:
           ports:
             - name: tcp-proxy
               containerPort: 3307
+          envFrom:
+            - configMapRef:
+                name: app-config
+          env:
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: password
           livenessProbe:
             tcpSocket:
               port: 3307
