@@ -34,27 +34,3 @@ spec:
     app: mysql-summary-records
   ports:
     - port: 3306
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mysql-summary-records
-spec:
-  clusterIP: None     
-  selector:
-    app: mysql-summary-records
-  ports:
-    - port: 3306
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mysql-summary-records
-spec:
-  clusterIP: None
-  selector:
-    app: mysql-summary-records
-  ports:
-    - port: 3306
