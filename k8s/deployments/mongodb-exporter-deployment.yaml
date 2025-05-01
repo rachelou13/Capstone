@@ -14,6 +14,10 @@ spec:
     metadata:
       labels:
         app: mongodb-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "9216"
+        prometheus.io/path:   "/metrics"
     spec:
       containers:
         - name: mongodb-exporter
@@ -21,6 +25,9 @@ spec:
           env:
             - name: MONGODB_URI
               # root:password@mongodb:27017  → adjust to your creds/secret
-              value: "mongodb://root:password@mongodb:27017"
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: mongodb-uri
           ports:
             - containerPort: 9216
