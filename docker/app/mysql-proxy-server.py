@@ -38,15 +38,24 @@ def forward(source, destination):
             data = source.recv(4096)
             if not data:
                 break
-            destination.sendall(data)
-    except (BrokenPipeError, ConnectionResetError, OSError) as e:
-        print(f"Forwarding error: {e}")
+            try:
+                destination.sendall(data)
+            except (BrokenPipeError, ConnectionResetError) as e:
+                print(f"sendall() failed: {e}")
+                break
+    except (ConnectionResetError, OSError) as e:
+        print(f"recv() failed: {e}")
     finally:
         try:
-            source.close()
-            destination.close()
+            source.shutdown(socket.SHUT_RDWR)
         except:
             pass
+        try:
+            destination.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        source.close()
+        destination.close()
 
 #*****************************************************************************************************************************************************
 
