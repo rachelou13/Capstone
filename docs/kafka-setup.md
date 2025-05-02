@@ -98,5 +98,5 @@ kubectl delete pod kafka-0
 
 ##  You're Done!
 
-Kafka in KRaft mode should now be running and accepting messages in your local Minikube Kubernetes environment. 🎉
+Kafka in KRaft mode should now be running and accepting messages in your local Minikube Kubernetes environment. 
 
