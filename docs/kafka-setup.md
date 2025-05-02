@@ -1,6 +1,6 @@
 # Kafka KRaft Mode Setup (Capstone Project)
 
-## ✅ Preconditions
+##  Preconditions
 
 Before deploying Kafka to the local Kubernetes cluster, ensure:
 
@@ -20,7 +20,7 @@ kubectl create namespace staging
 
 ---
 
-## 🚀 Step-by-Step: Deploy Kafka in KRaft Mode
+##  Step-by-Step: Deploy Kafka in KRaft Mode
 
 ### Step 1: Apply Kafka Headless Service
 
@@ -44,7 +44,7 @@ Wait until the pod enters the `Running` state. It may go through a few restarts 
 
 ---
 
-## ✅ Validate Kafka is Running
+##  Validate Kafka is Running
 
 ### Step 4: Launch Kafka Client Pod
 
@@ -85,7 +85,7 @@ Press `Ctrl + C` to exit the producer.
 
 ---
 
-## 🧼 Cleanup
+##  Cleanup
 
 If you ever need to wipe the Kafka StatefulSet:
 
