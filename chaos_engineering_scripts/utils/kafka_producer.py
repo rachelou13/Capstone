@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 class ChaosKafkaProducer:
     #Class for producing Kafka messages for chaos events
     def __init__(self, brokers=None, topic=None):
-        self.brokers = brokers if brokers else os.environ['DEFAULT_KAFKA_BROKERS']
-        self.topic = topic if topic else os.environ['DEFAULT_KAFKA_TOPIC']
+        self.brokers = brokers if brokers else ['localhost:9092']
+        self.topic = topic if topic else 'chaos-events'
         self.producer = None
         self.connected = False
         self._connect()
