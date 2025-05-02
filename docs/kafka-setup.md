@@ -1,8 +1,8 @@
-# Kafka KRaft Mode Setup (Capstone Project)
+# Kafka KRaft Mode Setup
 
 ##  Preconditions
 
-Before deploying Kafka to the local Kubernetes cluster, ensure:
+Before deploying Kafka to the local Kubernetes cluster, make sure:
 
 ### 1. Minikube Is Running
 
@@ -20,7 +20,7 @@ kubectl create namespace staging
 
 ---
 
-##  Step-by-Step: Deploy Kafka in KRaft Mode
+##  Deploy Kafka in KRaft Mode
 
 ### Step 1: Apply Kafka Headless Service
 
