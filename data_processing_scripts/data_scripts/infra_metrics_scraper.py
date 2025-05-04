@@ -21,6 +21,7 @@ def main():
                     "percent": psutil.virtual_memory().percent,
                     "used": psutil.virtual_memory().used
                 },
+                #How to target specific nodes?
                 "labels": {
                     "node": socket.gethostname()
                 }
@@ -30,6 +31,7 @@ def main():
         if not kafka_prod.send_event(metrics_scrape):
             logger.warning(f"Failed to send scraped metrics to Kafka. See log for error.")
 
+        #Should we let user specify custom scraping interval?
         time.sleep(10)
     
     #How to exit loop?
