@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: capstone-dashboard-json
+data:
+  capstone-dashboard.json: "{\r\n    \"annotations\": {\r\n        \"list\": [\r\n
+    \       {\r\n            \"builtIn\": 1,\r\n            \"datasource\": {\r\n
+    \           \"type\": \"grafana\",\r\n            \"uid\": \"-- Grafana --\"\r\n
+    \           },\r\n            \"enable\": true,\r\n            \"hide\": true,\r\n
+    \           \"iconColor\": \"rgba(0, 211, 255, 1)\",\r\n            \"name\":
+    \"Annotations & Alerts\",\r\n            \"type\": \"dashboard\"\r\n        }\r\n
+    \       ]\r\n    },\r\n    \"editable\": true,\r\n    \"fiscalYearStartMonth\":
+    0,\r\n    \"graphTooltip\": 0,\r\n    \"id\": 1,\r\n    \"links\": [],\r\n    \"panels\":
+    [\r\n        {\r\n        \"datasource\": \"Prometheus\",\r\n        \"fieldConfig\":
+    {\r\n            \"defaults\": {\r\n            \"color\": {\r\n                \"mode\":
+    \"thresholds\"\r\n            },\r\n            \"mappings\": [],\r\n            \"thresholds\":
+    {\r\n                \"mode\": \"absolute\",\r\n                \"steps\": [\r\n
+    \               {\r\n                    \"color\": \"green\"\r\n                },\r\n
+    \               {\r\n                    \"color\": \"red\",\r\n                    \"value\":
+    80\r\n                }\r\n                ]\r\n            }\r\n            },\r\n
+    \           \"overrides\": []\r\n        },\r\n        \"gridPos\": {\r\n            \"h\":
+    8,\r\n            \"w\": 12,\r\n            \"x\": 0,\r\n            \"y\": 0\r\n
+    \       },\r\n        \"id\": 2,\r\n        \"options\": {\r\n            \"minVizHeight\":
+    75,\r\n            \"minVizWidth\": 75,\r\n            \"orientation\": \"auto\",\r\n
+    \           \"reduceOptions\": {\r\n            \"calcs\": [\r\n                \"lastNotNull\"\r\n
+    \           ],\r\n            \"fields\": \"\",\r\n            \"values\": false\r\n
+    \           },\r\n            \"showThresholdLabels\": false,\r\n            \"showThresholdMarkers\":
+    true,\r\n            \"sizing\": \"auto\"\r\n        },\r\n        \"pluginVersion\":
+    \"11.6.1\",\r\n        \"targets\": [\r\n            {\r\n            \"editorMode\":
+    \"code\",\r\n            \"expr\": \"chaos_events_total\",\r\n            \"legendFormat\":
+    \"__auto\",\r\n            \"range\": true,\r\n            \"refId\": \"A\"\r\n
+    \           }\r\n        ],\r\n        \"title\": \"Total Chaos Events\",\r\n
+    \       \"type\": \"gauge\"\r\n        },\r\n        {\r\n        \"datasource\":
+    \"Prometheus\",\r\n        \"fieldConfig\": {\r\n            \"defaults\": {\r\n
+    \           \"color\": {\r\n                \"mode\": \"thresholds\"\r\n            },\r\n
+    \           \"mappings\": [],\r\n            \"thresholds\": {\r\n                \"mode\":
+    \"absolute\",\r\n                \"steps\": [\r\n                {\r\n                    \"color\":
+    \"green\"\r\n                },\r\n                {\r\n                    \"color\":
+    \"red\",\r\n                    \"value\": 80\r\n                }\r\n                ]\r\n
+    \           }\r\n            },\r\n            \"overrides\": []\r\n        },\r\n
+    \       \"gridPos\": {\r\n            \"h\": 5,\r\n            \"w\": 11,\r\n
+    \           \"x\": 0,\r\n            \"y\": 8\r\n        },\r\n        \"id\":
+    1,\r\n        \"options\": {\r\n            \"colorMode\": \"value\",\r\n            \"graphMode\":
+    \"area\",\r\n            \"justifyMode\": \"auto\",\r\n            \"orientation\":
+    \"auto\",\r\n            \"percentChangeColorMode\": \"standard\",\r\n            \"reduceOptions\":
+    {\r\n            \"calcs\": [\r\n                \"lastNotNull\"\r\n            ],\r\n
+    \           \"fields\": \"\",\r\n            \"values\": false\r\n            },\r\n
+    \           \"showPercentChange\": false,\r\n            \"textMode\": \"auto\",\r\n
+    \           \"wideLayout\": true\r\n        },\r\n        \"pluginVersion\": \"11.6.1\",\r\n
+    \       \"targets\": [\r\n            {\r\n            \"datasource\": \"Prometheus\",\r\n
+    \           \"editorMode\": \"code\",\r\n            \"expr\": \"recovery_rto_ms\",\r\n
+    \           \"legendFormat\": \"\",\r\n            \"range\": true,\r\n            \"refId\":
+    \"A\"\r\n            }\r\n        ],\r\n        \"title\": \"Recovery RTO\",\r\n
+    \       \"type\": \"stat\"\r\n        }\r\n    ],\r\n    \"preload\": false,\r\n
+    \   \"schemaVersion\": 41,\r\n    \"tags\": [],\r\n    \"templating\": {\r\n        \"list\":
+    []\r\n    },\r\n    \"time\": {\r\n        \"from\": \"now-6h\",\r\n        \"to\":
+    \"now\"\r\n    },\r\n    \"timepicker\": {},\r\n    \"timezone\": \"browser\",\r\n
+    \   \"title\": \"Test Dashbo\",\r\n    \"uid\": \"feklnsjszlhq8d\",\r\n    \"version\":
+    3\r\n}"
+

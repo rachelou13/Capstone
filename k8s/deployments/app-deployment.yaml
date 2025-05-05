@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: python-proxy-app
-  namespace: staging
   labels:
     app: python-proxy
 spec:
