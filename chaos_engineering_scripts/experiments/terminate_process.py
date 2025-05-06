@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 def find_and_terminate_process(target):
     logger.info(f"Attempting to find and terminate process matching {target}")
-    global process_terminated
     process_terminated = False
     for p in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
@@ -33,6 +32,7 @@ def find_and_terminate_process(target):
             pass
         except Exception as e:
             logger.error(f"Could not inspect process {p.pid if p else 'N/A'}: {e}")
+    return process_terminated
         
 
 def main():
@@ -70,11 +70,12 @@ def main():
         logger.warning(f"Failed to send start event to Kafka. See log for error.")
 
     try:
-        find_and_terminate_process(target)
+        process_terminated = find_and_terminate_process(target)
     except Exception as e:
         logger.error(f"An unexpected error occurred while terminating process(es): {e}")
     #Ensure end event is always sent, kafka producer is always closed
     finally:
+        print('BONK')
         #Send end event to kafka
         end_time = datetime.now(timezone.utc)
         end_event = {

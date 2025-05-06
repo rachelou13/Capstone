@@ -22,10 +22,11 @@ kubectl create namespace staging
 
 ##  Deploy Kafka in KRaft Mode
 
-### Step 1: Apply Kafka Headless Service
+### Step 1: Apply Kafka Headless Service, Kafka NodePort Service
 
 ```bash
-kubectl apply -f k8s/services/kafka-headless-service.yaml
+kubectl apply -f k8s/services/kafka-headless.yaml
+kubectl apply -f k8s/services/kafka-nodeport.yaml
 ```
 
 ### Step 2: Apply the Kafka StatefulSet (KRaft mode)
@@ -57,7 +58,7 @@ You should get a shell prompt inside the Kafka container.
 ### Step 5: List Topics
 
 ```bash
-kafka-topics.sh --bootstrap-server kafka-0.kafka.default.svc.cluster.local:9092 --list
+kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9092 --list
 ```
 
 Expected output (example):
@@ -70,13 +71,13 @@ logs
 ### Step 6: Create Test Topic
 
 ```bash
-kafka-topics.sh --bootstrap-server kafka-0.kafka.default.svc.cluster.local:9092 --create --topic test-topic --partitions 1 --replication-factor 1
+kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9092 --create --topic test-topic --partitions 1 --replication-factor 1
 ```
 
 ### Step 7: Send a Test Message
 
 ```bash
-kafka-console-producer.sh --broker-list kafka-0.kafka.default.svc.cluster.local:9092 --topic test-topic
+kafka-console-producer.sh --broker-list kafka-0.kafka-headless.default.svc.cluster.local:9092 --topic test-topic
 >hello from kafka!
 >another test message
 ```

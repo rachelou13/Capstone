@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class ChaosKafkaProducer:
     #Class for producing Kafka messages for chaos events
     def __init__(self, brokers=None, topic=None):
-        self.brokers = brokers if brokers else ['localhost:9092']
+        self.brokers = brokers if brokers else ['localhost:30092']
         self.topic = topic if topic else 'chaos-events'
         self.producer = None
         self.connected = False
@@ -39,11 +39,11 @@ class ChaosKafkaProducer:
     def send_event(self, event_data):
         #Sends a JSON dictionary with event info to configured Kafka topic
         if not self.connected or not self.producer:
-            logger.warning(f"Kafka producer not connected. The following event data will not be sent: {event_data.get({'event_type', 'N/A'}) - event_data.get({'experiment_id', 'N/A'})}")
+            logger.warning(f"Kafka producer not connected. The following event data will not be sent: {event_data.get('event_type', 'N/A')} - {event_data.get('experiment_id', 'N/A')}")
             return False
         
         try:
-            logger.info(f"Sent event to Kafka: {event_data.get({'event_type', 'N/A'}) - event_data.get({'experiment_id', 'N/A'})}")
+            logger.info(f"Sent event to Kafka: {event_data.get('event_type', 'N/A')} - {event_data.get('experiment_id', 'N/A')}")
             self.producer.flush()
             return True
         except KafkaError as e:
