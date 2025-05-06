@@ -15,9 +15,38 @@ spec:
       labels:
         app: kafka
     spec:
+      initContainers:
+        - name: kafka-kraft-format
+          image: bitnami/kafka:3.6.0
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              KAFKA_LOG_DIRS=${KAFKA_CFG_LOG_DIRS:-"/bitnami/kafka/data"}
+              FIRST_LOG_DIR=$(echo $KAFKA_LOG_DIRS | cut -d',' -f1)
+              METADATA_FILE="${FIRST_LOG_DIR}/meta.properties"
+              if [ ! -f "${METADATA_FILE}" ]; then
+                echo "Formatting KRaft storage (Log Dir: ${FIRST_LOG_DIR}) with Cluster ID ${KAFKA_KRAFT_CLUSTER_ID}"
+                kafka-storage.sh format -t "${KAFKA_KRAFT_CLUSTER_ID}" -c /opt/bitnami/kafka/config/kraft/server.properties --ignore-formatted
+              else
+                echo "KRaft storage already formatted (found ${METADATA_FILE}). Skipping."
+              fi
+          env:
+            - name: KAFKA_KRAFT_CLUSTER_ID
+              value: "Wn5L1FToTKOhJ2oBkEBa9Q=="
+            - name: KAFKA_CFG_LOG_DIRS
+              value: "/bitnami/kafka/data"
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /bitnami/kafka
       containers:
         - name: kafka
           image: bitnami/kafka:3.6.0
+          command: ["/bin/bash", "-ecx"]
+          args:
+            - |
+              export KAFKA_CFG_NODE_ID=${HOSTNAME##*-}
+              export KAFKA_CFG_ADVERTISED_LISTENERS="PLAINTEXT://${HOSTNAME}.kafka.default.svc.cluster.local:9092"
+              exec /opt/bitnami/scripts/kafka/entrypoint.sh /opt/bitnami/scripts/kafka/run.sh
           ports:
             - containerPort: 9092
               name: kafka
@@ -26,21 +55,32 @@ spec:
           env:
             - name: KAFKA_ENABLE_KRAFT
               value: "yes"
-            - name: KAFKA_CFG_NODE_ID
-              value: "0"
             - name: KAFKA_CFG_PROCESS_ROLES
               value: "broker,controller"
             - name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
-              value: "0@kafka-0.kafka.default.svc.cluster.local:9093"
+              value: "0@kafka-0.kafka.default.svc.cluster.local:9093,1@kafka-1.kafka.default.svc.cluster.local:9093,2@kafka-2.kafka.default.svc.cluster.local:9093"
             - name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
               value: "CONTROLLER"
             - name: KAFKA_CFG_LISTENERS
               value: "PLAINTEXT://:9092,CONTROLLER://:9093"
-            - name: KAFKA_CFG_ADVERTISED_LISTENERS
-              value: "PLAINTEXT://kafka-0.kafka.default.svc.cluster.local:9092"
             - name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
               value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+            - name: KAFKA_CFG_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
             - name: KAFKA_KRAFT_CLUSTER_ID
               value: "Wn5L1FToTKOhJ2oBkEBa9Q=="
+            - name: KAFKA_CFG_LOG_DIRS
+              value: "/bitnami/kafka/data"
             - name: ALLOW_PLAINTEXT_LISTENER
               value: "yes"
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /bitnami/kafka
+  volumeClaimTemplates:
+    - metadata:
+        name: kafka-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

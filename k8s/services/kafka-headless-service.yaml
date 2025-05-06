@@ -8,6 +8,8 @@ spec:
   ports:
     - port: 9092
       name: kafka
+    - port: 9093
+      name: controller
   clusterIP: None  # Headless service
   selector:
     app: kafka
