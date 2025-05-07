@@ -3,7 +3,6 @@ import argparse
 import uuid
 from datetime import datetime, timezone
 import time
-import json
 
 from kubernetes import client, config
 from kubernetes.stream import stream
@@ -306,7 +305,6 @@ def main():
             kafka_prod.send_event(error_event)
     #Ensure end event is always sent, kafka producer is always closed
     finally:
-        print('BONK')
         #Send end event to kafka
         end_time = datetime.now(timezone.utc)
         duration = (end_time - start_time).total_seconds()

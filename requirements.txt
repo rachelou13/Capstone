@@ -5,6 +5,7 @@ charset-normalizer==3.4.2
 click==8.1.8
 colorama==0.4.6
 dnspython==2.7.0
+dotenv==0.9.9
 durationpy==0.9
 Flask==3.1.0
 google-auth==2.40.1
@@ -21,6 +22,7 @@ pyasn1==0.6.1
 pyasn1_modules==0.4.2
 pymongo==4.12.1
 python-dateutil==2.9.0.post0
+python-dotenv==1.1.0
 PyYAML==6.0.2
 requests==2.32.3
 requests-oauthlib==2.0.0
