@@ -171,10 +171,11 @@ def main():
         help="String pattern to search for within the command line or name of processes running inside target pod"
     )
     parser.add_argument(
+        "-k",
         "--kube-config",
         type=str,
         required=False,
-        default=None,
+        default="~/.kube/config",
         metavar="KUBE_CONFIG",
         help="Path to kubeconfig file (if not running in-cluster)"
     )

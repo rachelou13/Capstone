@@ -3,6 +3,9 @@ import json
 import logging
 from kafka import KafkaProducer
 from kafka.errors import NoBrokersAvailable, KafkaError
+from dotenv import load_dotenv
+
+load_dotenv(verbose=True)
 
 #Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -11,8 +14,8 @@ logger = logging.getLogger(__name__)
 class ChaosKafkaProducer:
     #Class for producing Kafka messages for chaos events
     def __init__(self, brokers=None, topic=None):
-        self.brokers = brokers if brokers else ['localhost:30092']
-        self.topic = topic if topic else 'chaos-events'
+        self.brokers = brokers if brokers else os.environ['DEFAULT_KAFKA_BROKERS']
+        self.topic = topic if topic else os.environ['DEFAULT_KAFKA_TOPIC']
         self.producer = None
         self.connected = False
         self._connect()
@@ -22,6 +25,7 @@ class ChaosKafkaProducer:
         try:
             self.producer = KafkaProducer (
                bootstrap_servers = self.brokers,
+               key_serializer=lambda k: str(k).encode('utf-8'),
                value_serializer = lambda v: json.dumps(v).encode('utf-8'),
                client_id = 'chaos-experiments-producer'
             )
@@ -43,8 +47,11 @@ class ChaosKafkaProducer:
             return False
         
         try:
-            logger.info(f"Sent event to Kafka: {event_data.get('event_type', 'N/A')} - {event_data.get('experiment_id', 'N/A')}")
+            self.producer.send(self.topic, 
+                               key=event_data.get('experiment_id'),
+                               value=event_data)
             self.producer.flush()
+            logger.info(f"Sent event to Kafka: {event_data.get('event_type', 'N/A')} - {event_data.get('experiment_id', 'N/A')}")
             return True
         except KafkaError as e:
             logger.error(f"Failed to send event to Kafka topc '{self.topic}': {e}")

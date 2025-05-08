@@ -7,11 +7,14 @@ metadata:
 spec:
   ports:
     - port: 9092
-      name: kafka
+      name: external
       targetPort: 9092
     - port: 9093
       name: controller
       targetPort: 9093
+    - port: 9094
+      name: internal
+      targetPort: 9094
   clusterIP: None
   selector:
     app: kafka

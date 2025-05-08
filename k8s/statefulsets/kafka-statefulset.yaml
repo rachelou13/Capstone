@@ -45,18 +45,28 @@ spec:
           args:
             - |
               export KAFKA_CFG_NODE_ID=${HOSTNAME##*-}
-              INTERNAL_ADVERTISED_LISTENER="PLAINTEXT://${HOSTNAME}.kafka-headless.default.svc.cluster.local:9092"
-              EXTERNAL_ADVERTISED="PLAINTEXT://localhost:30092"
-              export KAFKA_CFG_ADVERTISED_LISTENERS="${INTERNAL_ADVERTISED_LISTENER},${EXTERNAL_ADVERTISED_LISTENER}"
-              export KAFKA_CFG_LISTENERS="PLAINTEXT://:9092,CONTROLLER://:9093"
-              export KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP="CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-              export KAFKA_CFG_INTER_BROKER_LISTENER_NAME="PLAINTEXT"
+
+              LISTENER_INTERNAL_NAME="INTERNAL"
+              LISTENER_EXTERNAL_NAME="EXTERNAL"
+
+              export KAFKA_CFG_LISTENERS="${LISTENER_INTERNAL_NAME}://:9094,${LISTENER_EXTERNAL_NAME}://:9092,CONTROLLER://:9093"
+
+              ADVERTISED_INTERNAL_URI="${LISTENER_INTERNAL_NAME}://${HOSTNAME}.kafka-headless.default.svc.cluster.local:9094"
+              ADVERTISED_EXTERNAL_URI="${LISTENER_EXTERNAL_NAME}://localhost:30092"
+              export KAFKA_CFG_ADVERTISED_LISTENERS="${ADVERTISED_INTERNAL_URI},${ADVERTISED_EXTERNAL_URI}"
+
+              export KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP="CONTROLLER:PLAINTEXT,${LISTENER_INTERNAL_NAME}:PLAINTEXT,${LISTENER_EXTERNAL_NAME}:PLAINTEXT"
+
+              export KAFKA_CFG_INTER_BROKER_LISTENER_NAME="${LISTENER_INTERNAL_NAME}"
+
               exec /opt/bitnami/scripts/kafka/entrypoint.sh /opt/bitnami/scripts/kafka/run.sh
           ports:
             - containerPort: 9092
-              name: kafka
+              name: external
             - containerPort: 9093
               name: controller
+            - containerPort: 9094
+              name: internal
           env:
             - name: KAFKA_ENABLE_KRAFT
               value: "yes"
