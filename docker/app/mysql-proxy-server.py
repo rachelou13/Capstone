@@ -17,6 +17,7 @@ REPLICA_HOST = "mysql-replica"
 
 # Info for our Kafka producer
 KAFKA_BROKER = "kafka:9092"
+KAFKA_TOPIC = "proxy_logs"
 
 DB_CONFIG = {
     "user": "root",
@@ -49,7 +50,7 @@ def connect_to_database(host):
 
 #*****************************************************************************************************************************************************
 
-def forward(source, destination):
+def forward(source, destination, direction, client_ip):
     try:
         while True:
             data = source.recv(4096)
@@ -59,6 +60,7 @@ def forward(source, destination):
                 destination.sendall(data)
             except (BrokenPipeError, ConnectionResetError) as e:
                 print(f"sendall() failed: {e}")
+                # For when sending fails
                 if producer:
                     producer.send(KAFKA_TOPIC, {
                         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -73,6 +75,7 @@ def forward(source, destination):
                 break
     except (ConnectionResetError, OSError) as e:
         print(f"recv() failed: {e}")
+        # For when the reading fails
         if producer:
             producer.send(KAFKA_TOPIC, {
                 "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -106,10 +109,25 @@ def switch_to_other():
         if other_host == REPLICA_HOST:
             print("Promoting replica...")
             promote_to_primary(REPLICA_HOST)
+            if producer:
+                producer.send(KAFKA_TOPIC, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "level": "WARNING",
+                    "event": "failover",
+                    "db_target": REPLICA_HOST,
+                    "source": "proxy-server"
+                })
         else:
             print("Primary is back — reconfiguring it as replica")
             configure_as_replica(PRIMARY_HOST, REPLICA_HOST)
-
+            if producer:
+                producer.send(KAFKA_TOPIC, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "level": "INFO",
+                    "event": "reconnected",
+                    "db_target": PRIMARY_HOST,
+                    "source": "proxy-server"
+                })
         current_host = other_host
         print(f"Now using {current_host} as active DB")
     else:
@@ -127,15 +145,40 @@ def monitor_and_failover():
             try:
                 cursor = connection.cursor()
                 cursor.execute("SELECT 1")
+                # Send db alive info to kafka
+                if producer:
+                    producer.send(KAFKA_TOPIC, {
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "level": "INFO",
+                        "event": "up",
+                        "db_target": current_host,
+                        "source": "proxy-server"
+                    })
                 print(f"{current_host} is alive")
                 time.sleep(10)
             except Error as e:
                 print(f"DB error on {current_host}: {e}")
                 connection.close()
+                if producer:
+                    producer.send(KAFKA_TOPIC, {
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "level": "ERROR",
+                        "event": "down",
+                        "db_target": current_host,
+                        "source": "proxy-server"
+                    })
                 switch_to_other()
         else:
             print(f"Connection failed for {current_host}. Switching...")
-            switch_to_other()
+            if producer:
+                producer.send(KAFKA_TOPIC, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "level": "ERROR",
+                    "event": "down",
+                    "db_target": current_host,
+                    "source": "proxy-server"
+                })
+        switch_to_other()
 
         time.sleep(5)
 
@@ -145,7 +188,7 @@ def handle_client(client_socket):
     global current_host
     try:
         db_socket = socket.create_connection((current_host, 3306))
-
+        client_ip = client_socket.getpeername()[0]
         if producer:
             producer.send(KAFKA_TOPIC, {
                 "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -157,8 +200,8 @@ def handle_client(client_socket):
             })
         
         # Start bidirectional forwarding
-        threading.Thread(target=forward, args=(client_socket, db_socket)).start()
-        threading.Thread(target=forward, args=(db_socket, client_socket)).start()
+        threading.Thread(target=forward, args=(client_socket, db_socket, "client->db", client_ip)).start()
+        threading.Thread(target=forward, args=(db_socket, client_socket, "db->client", client_ip)).start()
 
     except Exception as e:
         print(f"Connection failed: {e}")
