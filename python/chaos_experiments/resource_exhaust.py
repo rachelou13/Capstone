@@ -154,7 +154,7 @@ def main():
             kafka_prod.send_event(k8s_fail_event, experiment_id)
         return
     
-    #Execute experiment
+    #Find target pod and container info
     try:
         logger.debug(f"Searching for pod with UID: {pod_uid}")
         all_pods = core_v1.list_pod_for_all_namespaces(watch=False, timeout_seconds=60)
@@ -162,9 +162,10 @@ def main():
         for pod in all_pods.items:
             if pod.metadata.uid == pod_uid:
                 target_pod_info = {
+                    'uid': pod.metadata.uid,
                     'name': pod.metadata.name,
                     'namespace': pod.metadata.namespace,
-                    'uid': pod.metadata.uid
+                    'node': pod.spec.node_name
                 }
 
                 found_pod = pod
@@ -217,6 +218,7 @@ def main():
     if not kafka_prod.send_event(start_event, experiment_id):
         logger.warning(f"Failed to send START event to Kafka for experiment {experiment_id}. See producer log for error.")
 
+    #Execute experiment
     try:
         logger.info(f"Starting resource exhaustion experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid})")
         cpu_stress_test_success = cpu_stress_in_pod(core_v1, target_pod_info, target_container_names, num_cores, duration)

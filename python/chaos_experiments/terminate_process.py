@@ -226,9 +226,10 @@ def main():
         for pod in all_pods.items:
             if pod.metadata.uid == pod_uid:
                 target_pod_info = {
+                    'uid': pod.metadata.uid,
                     'name': pod.metadata.name,
                     'namespace': pod.metadata.namespace,
-                    'uid': pod.metadata.uid
+                    'node': pod.spec.node_name
                 }
 
                 found_pod = pod
