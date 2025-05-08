@@ -58,7 +58,7 @@ You should get a shell prompt inside the Kafka container.
 ### Step 5: List Topics
 
 ```bash
-kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9092 --list
+kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9094 --list
 ```
 
 Expected output (example):
@@ -71,7 +71,7 @@ logs
 ### Step 6: Create Test Topic
 
 ```bash
-kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9092 --create --topic test-topic --partitions 1 --replication-factor 1
+kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9094 --create --topic test-topic --partitions 1 --replication-factor 1
 ```
 
 ### Step 7: Send a Test Message
@@ -83,6 +83,11 @@ kafka-console-producer.sh --broker-list kafka-0.kafka-headless.default.svc.clust
 ```
 
 Press `Ctrl + C` to exit the producer.
+
+# Step 8: Using Console Consumer
+```sh
+kafka-console-consumer.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9094 --topic
+``` 
 
 ---
 

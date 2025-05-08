@@ -9,7 +9,7 @@ from kubernetes.stream import stream
 
 from chaos_engineering_scripts.utils.kafka_producer import ChaosKafkaProducer
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def exec_command_in_pod(api, pod_name, namespace, container_name, command_list):
@@ -287,7 +287,7 @@ def main():
 
     #Execute experiment
     try:
-        logger.info(f"Starting process termination experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {args.pod_uid}" + 
+        logger.info(f"Starting process termination experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid}" + 
                     (f" - {container_id_prefix}" if container_id_prefix else "") + 
                     (f" - {process_pattern}" if process_pattern else "") + ")")
         process_terminated_count = find_and_terminate_process(core_v1, target_pod_info, target_container_names, pod_uid, container_id_prefix, process_pattern)
