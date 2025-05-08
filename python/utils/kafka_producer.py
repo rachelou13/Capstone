@@ -10,7 +10,7 @@ load_dotenv(verbose=True)
 #Configure logging
 logger = logging.getLogger(__name__)
 
-class KafkaProducer:
+class CapstoneKafkaProducer:
     #Class for producing Kafka messages
     def __init__(self, brokers=None, topic=None):
         self.brokers = brokers if brokers else os.environ['DEFAULT_KAFKA_BROKERS']
@@ -39,18 +39,24 @@ class KafkaProducer:
             self.producer = None
             self.connected = False
 
-    def send_event(self, event_data):
+    def send_event(self, event_data, key):
         #Sends a JSON dictionary with event info to configured Kafka topic
+
+        #Check connection
+        if not self.connected:
+            self._connect()
+
+        #If still not connected - log failure
         if not self.connected or not self.producer:
-            logger.warning(f"Kafka producer not connected. The following event data will not be sent: {event_data.get('event_type', 'N/A')} - {event_data.get('experiment_id', 'N/A')}")
+            logger.warning(f"Kafka producer not connected. The following event data will not be sent: {event_data.get('event_type', 'N/A')} - {key}")
             return False
         
         try:
             self.producer.send(self.topic, 
-                               key=event_data.get('experiment_id'),
+                               key=key,
                                value=event_data)
-            self.producer.flush()
-            logger.info(f"Sent event to Kafka: {event_data.get('event_type', 'N/A')} - {event_data.get('experiment_id', 'N/A')}")
+            #self.producer.flush()
+            logger.info(f"Sent event to Kafka: {event_data.get('event_type', 'N/A')} - {key}")
             return True
         except KafkaError as e:
             logger.error(f"Failed to send event to Kafka topc '{self.topic}': {e}")

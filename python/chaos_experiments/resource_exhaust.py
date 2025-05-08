@@ -8,7 +8,7 @@ import time
 from kubernetes import client, config
 from kubernetes.stream import stream
 
-from chaos_engineering_scripts.utils.kafka_producer import ChaosKafkaProducer
+from python.utils.kafka_producer import CapstoneKafkaProducer
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,7 +40,7 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
     cpu_stress_test_success = False
     pod_name = pod_info['name']
     namespace = pod_info['namespace']
-    stress_command_core_loop = "echo 'BONK'"
+    stress_command_core_loop = "while true; do; $((1 + 1)); done;"
 
     for container_name in container_names:
         background_pids_file = f"/tmp/chaos_cpu_pids_{container_name}.txt"
@@ -48,7 +48,7 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
             'echo "Script started at $(date)" > /tmp/cpu_stress_internal.log; '
             f"rm -f {background_pids_file}; "
             f"for i in $(seq 1 {num_cores}); do "
-            f"  (exec {stress_command_core_loop} >/dev/null 2>&1) & echo $! >> {background_pids_file}; "
+            f'  (exec /bin/sh -c "${stress_command_core_loop}" >/dev/null 2>&1) & echo $! >> {background_pids_file}; '
             f"done; "
             f"echo 'CPU stress processes started, PIDs in {background_pids_file}'; "
             f'echo "Before sleep at $(date)" >> /tmp/cpu_stress_internal.log; '
@@ -125,7 +125,7 @@ def main():
     kube_config = args.kube_config
 
     #Start kafka producer
-    kafka_prod = ChaosKafkaProducer()
+    kafka_prod = CapstoneKafkaProducer()
     experiment_id = str(uuid.uuid4())
     start_time = datetime.now(timezone.utc)
 
@@ -151,8 +151,7 @@ def main():
                 "error": f"K8s client init failed: {e}"
              }
 
-            kafka_prod.send_event(k8s_fail_event)
-            kafka_prod.close()
+            kafka_prod.send_event(k8s_fail_event, experiment_id)
         return
     
     #Execute experiment
@@ -196,8 +195,7 @@ def main():
                 "error": f"Pod discovery failed: {e}"
             }
 
-            kafka_prod.send_event(pod_fail_event)
-            kafka_prod.close()
+            kafka_prod.send_event(pod_fail_event, experiment_id)
         return
 
     #Send start event to kafka
@@ -216,7 +214,7 @@ def main():
     }
 
     #Kafka producer send event function returns True if successful, False if failed
-    if not kafka_prod.send_event(start_event):
+    if not kafka_prod.send_event(start_event, experiment_id):
         logger.warning(f"Failed to send START event to Kafka for experiment {experiment_id}. See producer log for error.")
 
     try:
@@ -240,7 +238,7 @@ def main():
         }
 
         #Kafka producer send event function returns True if successful, False if failed
-        if not kafka_prod.send_event(end_event):
+        if not kafka_prod.send_event(end_event, experiment_id):
                 logger.warning(f"Failed to send END event to Kafka for experiment {experiment_id}. See producer log for error.")
 
         kafka_prod.close()

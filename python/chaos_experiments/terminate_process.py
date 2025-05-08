@@ -7,7 +7,7 @@ import time
 from kubernetes import client, config
 from kubernetes.stream import stream
 
-from chaos_engineering_scripts.utils.kafka_producer import ChaosKafkaProducer
+from python.utils.kafka_producer import CapstoneKafkaProducer
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -186,7 +186,7 @@ def main():
     kube_config = args.kube_config
 
     #Start kafka producer
-    kafka_prod = ChaosKafkaProducer()
+    kafka_prod = CapstoneKafkaProducer()
     experiment_id = str(uuid.uuid4())
     start_time = datetime.now(timezone.utc)
 
@@ -212,8 +212,7 @@ def main():
                 "error": f"K8s client init failed: {e}"
              }
 
-            kafka_prod.send_event(k8s_fail_event)
-            kafka_prod.close()
+            kafka_prod.send_event(k8s_fail_event, experiment_id)
         return
 
     #Find target pod and container info
@@ -260,8 +259,7 @@ def main():
                 "error": f"Pod discovery failed: {e}"
             }
 
-            kafka_prod.send_event(pod_fail_event)
-            kafka_prod.close()
+            kafka_prod.send_event(pod_fail_event, experiment_id)
         return
 
 
@@ -281,7 +279,7 @@ def main():
     }
 
     #Kafka producer send event function returns True if successful, False if failed
-    if not kafka_prod.send_event(start_event):
+    if not kafka_prod.send_event(start_event, experiment_id):
         logger.warning(f"Failed to send START event to Kafka for experiment {experiment_id}. See producer log for error.")
 
 
@@ -303,7 +301,7 @@ def main():
                     start_event["parameters"],
                 "error": f"Process termination failed: {e}"
             }
-            kafka_prod.send_event(error_event)
+            kafka_prod.send_event(error_event, experiment_id)
     #Ensure end event is always sent, kafka producer is always closed
     finally:
         #Send end event to kafka
@@ -324,7 +322,7 @@ def main():
         }
 
         #Kafka producer send event function returns True if successful, False if failed
-        if not kafka_prod.send_event(end_event):
+        if not kafka_prod.send_event(end_event, experiment_id):
                 logger.warning(f"Failed to send END event to Kafka for experiment {experiment_id}. See producer log for error.")
 
         kafka_prod.close()
