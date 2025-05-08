@@ -17,7 +17,7 @@ REPLICA_HOST = "mysql-replica"
 
 # Info for our Kafka producer
 KAFKA_BROKER = "kafka:9092"
-KAFKA_TOPIC = "proxy_logs"
+KAFKA_TOPIC = "proxy-logs"
 
 DB_CONFIG = {
     "user": "root",
