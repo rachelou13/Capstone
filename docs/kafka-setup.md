@@ -4,7 +4,7 @@
 
 Before deploying Kafka to the local Kubernetes cluster, make sure:
 
-### 1. Minikube Is Running
+### 1. Minikube Is Running
 
 ```bash
 minikube status
@@ -17,6 +17,15 @@ minikube start
 ```bash
 kubectl create namespace staging
 ```
+
+
+---
+
+### ✅ Now, To Add It:
+
+1. Run:
+   ```bash
+   nano docs/kafka-setup.md
 
 ---
 
@@ -105,4 +114,21 @@ kubectl delete pod kafka-0
 ##  You're Done!
 
 Kafka in KRaft mode should now be running and accepting messages in your local Minikube Kubernetes environment. 
+
+---
+
+## Controlling Topic Creation (Optional)
+
+By default, Kafka is configured to **automatically create topics** when a producer or consumer references a topic name that doesn't exist.
+
+This can be convenient during development, but you may want to **disable it** in certain scenarios.
+
+### 🔧 To Disable Auto Topic Creation
+
+You can prevent Kafka from creating topics automatically by setting the following environment variable in your Kafka manifest (e.g., `kafka-statefulset.yaml`):
+
+```yaml
+- name: KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE
+  value: "false"
+
 
