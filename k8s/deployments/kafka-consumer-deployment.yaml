@@ -17,4 +17,4 @@ spec:
       containers:
         - name: kafka-consumer
           image: henrose/kafka-consumer:latest
-          command: ["python", "./kafka_consumer.py"]
+          command: ["python", "kafka_consumer.py"]
