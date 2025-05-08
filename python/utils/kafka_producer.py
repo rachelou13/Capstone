@@ -3,13 +3,15 @@ import json
 import logging
 from kafka import KafkaProducer
 from kafka.errors import NoBrokersAvailable, KafkaError
+from dotenv import load_dotenv
+
+load_dotenv(verbose=True)
 
 #Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class DataKafkaProducer:
-    #Class for producing Kafka messages for infrastructure metrics
+class KafkaProducer:
+    #Class for producing Kafka messages
     def __init__(self, brokers=None, topic=None):
         self.brokers = brokers if brokers else os.environ['DEFAULT_KAFKA_BROKERS']
         self.topic = topic if topic else os.environ['DEFAULT_KAFKA_TOPIC']
@@ -22,8 +24,9 @@ class DataKafkaProducer:
         try:
             self.producer = KafkaProducer (
                bootstrap_servers = self.brokers,
+               key_serializer=lambda k: str(k).encode('utf-8'),
                value_serializer = lambda v: json.dumps(v).encode('utf-8'),
-               client_id = 'infra-metrics-producer'
+               client_id = 'kafka-python-producer'
             )
             self.connected = True
             logger.info(f"Kafka producer successfully connected to {self.brokers}")
@@ -39,12 +42,15 @@ class DataKafkaProducer:
     def send_event(self, event_data):
         #Sends a JSON dictionary with event info to configured Kafka topic
         if not self.connected or not self.producer:
-            logger.warning(f"Kafka producer not connected. The following event data will not be sent: {event_data.get({'event_type', 'N/A'}) - event_data.get({'experiment_id', 'N/A'})}")
+            logger.warning(f"Kafka producer not connected. The following event data will not be sent: {event_data.get('event_type', 'N/A')} - {event_data.get('experiment_id', 'N/A')}")
             return False
         
         try:
-            logger.info(f"Sent event to Kafka: {event_data.get({'event_type', 'N/A'}) - event_data.get({'experiment_id', 'N/A'})}")
+            self.producer.send(self.topic, 
+                               key=event_data.get('experiment_id'),
+                               value=event_data)
             self.producer.flush()
+            logger.info(f"Sent event to Kafka: {event_data.get('event_type', 'N/A')} - {event_data.get('experiment_id', 'N/A')}")
             return True
         except KafkaError as e:
             logger.error(f"Failed to send event to Kafka topc '{self.topic}': {e}")
