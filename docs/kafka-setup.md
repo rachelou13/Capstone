@@ -86,7 +86,7 @@ kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.lo
 ### Step 7: Send a Test Message
 
 ```bash
-kafka-console-producer.sh --broker-list kafka-0.kafka-headless.default.svc.cluster.local:9092 --topic test-topic
+kafka-console-producer.sh --broker-list kafka-0.kafka-headless.default.svc.cluster.local:9094 --topic test-topic
 >hello from kafka!
 >another test message
 ```

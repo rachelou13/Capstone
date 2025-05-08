@@ -223,7 +223,7 @@ def main():
         logger.info(f"Starting resource exhaustion experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid})")
         cpu_stress_test_success = cpu_stress_in_pod(core_v1, target_pod_info, target_container_names, num_cores, duration)
     except Exception as e:
-        logger.error(f"An unexpected error occurred while running load on CPU(s): {e}")
+        logger.error(f"Unexpected error occurred while running load on CPU(s): {e}")
     #Ensure end event is always sent, kafka producer is always closed
     finally:
         #Send end event to kafka

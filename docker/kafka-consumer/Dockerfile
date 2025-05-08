@@ -5,7 +5,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY docker/test-app/test-service.py .
+COPY docker/kafka-consumer/kafka_consumer.py .
 
-CMD ["python", "./test-service.py"]
-
+CMD ["python", "./kafka_consumer.py"]

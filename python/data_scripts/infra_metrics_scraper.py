@@ -14,12 +14,12 @@ logger = logging.getLogger(__name__)
 
 class InfraMetricsScraper:
     #Class for monitoring infra metrics during chaos experiments
-    def __init__(self, experiment_id, target_pod_uid, kube_config="~/.kube/config", scrape_interval=5):
+    def __init__(self, experiment_id, target_pod_info, kube_config="~/.kube/config", scrape_interval=5):
         self.experiment_id = experiment_id
-        self.target_pod_uid = target_pod_uid
-        self.target_node_name = None
-        self.target_pod_name = None
-        self.target_pod_namespace = None
+        self.target_pod_uid = target_pod_info['uid']
+        self.target_pod_name = target_pod_info['name']
+        self.target_pod_namespace = target_pod_info['namespace']
+        self.target_node_name = target_pod_info['node']
         self.allocatable_cpu = None
         self.allocatable_memory = None
         self.kube_config = kube_config
@@ -51,10 +51,120 @@ class InfraMetricsScraper:
 
                 self.kafka_prod.send_event(k8s_fail_event, self.experiment_id)
             return
-    
-    def _resolve_target_info(self):
         
+        #Get allocatable CPU and memory
+        if not self._resolve_target_node_info():
+            raise Exception(f"Unexpected ")
 
+    def _parse_quantity(quantity_str: str) -> float:
+        if not isinstance(quantity_str, str) or not quantity_str:
+            raise ValueError(f"Quantity must be a non-empty string, got '{quantity_str}'")
+
+        binary_suffixes = {
+            'Ki': 2**10, 
+            'Mi': 2**20, 
+            'Gi': 2**30, 
+            'Ti': 2**40, 
+            'Pi': 2**50, 
+            'Ei': 2**60,
+        }
+        decimal_suffixes = {
+            'm': 1e-3,   
+            'k': 1e3,    
+            'M': 1e6,    
+            'G': 1e9,    
+            'T': 1e12,   
+            'P': 1e15,   
+            'E': 1e18,
+        }
+
+        numeric_part_str = quantity_str
+        multiplier = 1.0
+        processed_suffix = False
+
+        if len(quantity_str) >= 3:
+            suffix = quantity_str[-2:]
+            if suffix in binary_suffixes:
+                numeric_part_str = quantity_str[:-2]
+                multiplier = binary_suffixes[suffix]
+                processed_suffix = True
+        
+        if not processed_suffix and len(quantity_str) >= 2:
+            suffix = quantity_str[-1:]
+            if suffix in decimal_suffixes:
+                numeric_part_str = quantity_str[:-1]
+                multiplier = decimal_suffixes[suffix]
+                processed_suffix = True
+            elif not quantity_str[-1].isdigit():
+                 raise ValueError(f"Unknown suffix or invalid format in quantity string: {quantity_str}")
+
+        if not numeric_part_str:
+            raise ValueError(f"No numeric value found in quantity string: {quantity_str}")
+
+        try:
+            value = float(numeric_part_str)
+        except ValueError:
+            raise ValueError(f"Invalid numeric part '{numeric_part_str}' in quantity string: {quantity_str}")
+            
+        return value * multiplier
+    
+    def _resolve_target_node_info(self):
+        if not self.core_v1:
+            logger.error("CoreV1Api not initialized. Cannot fetch node resources.")
+            return False
+
+        if not self.target_node_name:
+            logger.error("Target node name is missing. Cannot fetch node allocatable resources.")
+            return False
+        try: 
+            node = self.core_v1.read_node(self.target_node_name)
+        except client.exceptions.ApiException as e:
+            if e.status == 404:
+                logger.error(f"Node '{self.target_node_name}' not found.")
+            else:
+                logger.error(f"Kubernetes API error fetching node '{self.target_node_name}': Status {e.status}, Reason: {e.reason}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error fetching node '{self.target_node_name}': {e}")
+            return False
+        
+        if not hasattr(node, 'status') or not node.status:
+            logger.error(f"Node '{self.target_node_name}' has no status information.")
+            return False
+        
+        if not hasattr(node.status, 'allocatable') or not node.status.allocatable:
+            logger.error(f"Node '{self.target_node_name}' status has no 'allocatable' resources information.")
+            return False
+        
+        allocatable_resources = node.status.allocatable
+        
+        cpu_quantity_str = allocatable_resources.get('cpu')
+        memory_quantity_str = allocatable_resources.get('memory')
+
+        #Parse CPU quantity from string
+        success_cpu = False
+        if cpu_quantity_str:
+            try:
+                self.allocatable_cpu = self._parse_quantity(cpu_quantity_str)
+                success_cpu = True
+            except ValueError as e:
+                logger.error(f"Failed to parse CPU quantity '{cpu_quantity_str}' for node '{self.target_node_name}': {e}")
+        else:
+            logger.warning(f"Allocatable CPU quantity not found for node '{self.target_node_name}'.")
+
+        #Parse memory quantity from string
+        success_memory = False
+        if memory_quantity_str:
+            try:
+                self.allocatable_memory = self._parse_quantity(memory_quantity_str)
+                success_memory = True
+            except ValueError as e:
+                logger.error(f"Failed to parse Memory quantity '{memory_quantity_str}' for node '{self.target_node_name}': {e}")
+        else:
+            logger.warning(f"Allocatable Memory quantity not found for node '{self.target_node_name}'.")
+
+        return success_cpu and success_memory
+        
     def _monitor(self):
         self.start_time = datetime.now(timezone.utc)
         while self.run_loop: 
