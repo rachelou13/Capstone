@@ -3,12 +3,20 @@ import mysql.connector
 from mysql.connector import Error
 import socket
 import threading
+from kafka import KafkaProducer
+from kafka.errors import NoBrokersAvailable, KafkaError
+import json
+from datetime import datetime
 
 # The port for our proxy
 PROXY_PORT = 3307
 
+# Global variables for our host aand replica names
 PRIMARY_HOST = "mysql-primary"
 REPLICA_HOST = "mysql-replica"
+
+# Info for our Kafka producer
+KAFKA_BROKER = "kafka:9092"
 
 DB_CONFIG = {
     "user": "root",
@@ -17,6 +25,15 @@ DB_CONFIG = {
 }
 
 current_host = PRIMARY_HOST
+
+#*****************************************************************************************************************************************************
+# Initialize Kafka producer
+try:
+    producer = KafkaProducer(bootstrap_servers=KAFKA_BROKER,value_serializer=lambda v: json.dumps(v).encode('utf-8'))
+    print("Kafka producer ready")
+except Exception as e:
+    producer = None
+    print(f"Kafka producer failed to initialize: {e}")
 
 #*****************************************************************************************************************************************************
 
@@ -42,9 +59,31 @@ def forward(source, destination):
                 destination.sendall(data)
             except (BrokenPipeError, ConnectionResetError) as e:
                 print(f"sendall() failed: {e}")
+                if producer:
+                    producer.send(KAFKA_TOPIC, {
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "level": "ERROR",
+                        "event": "broken_pipe",
+                        "message": str(e),
+                        "direction": direction,
+                        "client_ip": client_ip,
+                        "db_target": current_host,
+                        "source": "proxy-server"
+                    })
                 break
     except (ConnectionResetError, OSError) as e:
         print(f"recv() failed: {e}")
+        if producer:
+            producer.send(KAFKA_TOPIC, {
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "level": "ERROR",
+                "event": "recv_failed",
+                "message": str(e),
+                "direction": direction,
+                "client_ip": client_ip,
+                "db_target": current_host,
+                "source": "proxy-server"
+            })
     finally:
         try:
             source.shutdown(socket.SHUT_RDWR)
@@ -107,6 +146,16 @@ def handle_client(client_socket):
     try:
         db_socket = socket.create_connection((current_host, 3306))
 
+        if producer:
+            producer.send(KAFKA_TOPIC, {
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "level": "INFO",
+                "event": "connection_accepted",
+                "client_ip": client_ip,
+                "db_target": current_host,
+                "source": "proxy-server"
+            })
+        
         # Start bidirectional forwarding
         threading.Thread(target=forward, args=(client_socket, db_socket)).start()
         threading.Thread(target=forward, args=(db_socket, client_socket)).start()
