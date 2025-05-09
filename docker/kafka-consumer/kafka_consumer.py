@@ -1,43 +1,81 @@
 import logging
 import json
-from kafka.consumer import KafkaConsumer
+import time
+from kafka import KafkaConsumer
+from kafka.errors import KafkaError, NoBrokersAvailable
 
-#Configure logging
+# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 
-def main(): 
+KAFKA_BROKERS = [
+    "kafka-0.kafka-headless.default.svc.cluster.local:9094",
+    "kafka-1.kafka-headless.default.svc.cluster.local:9094",
+    "kafka-2.kafka-headless.default.svc.cluster.local:9094"
+]
+
+TOPICS = ["proxy-logs", "infra-metrics", "chaos-events"]
+
+def safe_deserialize_key(key):
+    try:
+        return key.decode('utf-8') if key else None
+    except Exception as e:
+        logger.warning(f"Failed to decode key: {e}")
+        return None
+
+def safe_deserialize_value(value):
+    try:
+        return json.loads(value.decode('utf-8')) if value else None
+    except Exception as e:
+        logger.warning(f"Failed to deserialize value: {e}")
+        return {}
+
+def start_consumer():
     consumer = KafkaConsumer(
-        bootstrap_servers="kafka-0.kafka-headless.default.svc.cluster.local:9094,kafka-1.kafka-headless.default.svc.cluster.local:9094,kafka-2.kafka-headless.default.svc.cluster.local:9094",
+        *TOPICS,
+        bootstrap_servers=KAFKA_BROKERS,
         auto_offset_reset='earliest',
         enable_auto_commit=True,
         group_id='consumer-group-0',
-        key_deserializer=lambda k: k.decode('utf-8'),
-        value_deserializer=lambda v: json.loads(v.decode('utf-8'))
+        key_deserializer=safe_deserialize_key,
+        value_deserializer=safe_deserialize_value
     )
-# Need to make the tables for the info if they are not created already so we can store the log in the databases
 
-    print("Kafka consumer is running")
-
-    consumer.subscribe(["proxy-logs", "infra-metrics", "chaos-events"])
-
-    print("Listeninig to proxy-logs, infra-metrics, and chaos-events")
+    logger.info("Kafka consumer started and subscribed.")
 
     for message in consumer:
-        logger.info(f"Consumed message {message.value} from topic {message.topic} from partition {message.partition} at offset {message.offset}")
-        topic = message.topic
-        value = message.value
+        try:
+            topic = message.topic
+            value = message.value
 
-        if topic == 'proxy-logs':
-            # send to mysql in a nice way
-            print(f"Sending message from {topic} to MYSQL")
-        elif topic == 'infra-metrics':
-            # send to mongodb here
-            print(f"Sending message from {topic} to MONGODB")
-        elif topic == 'chaos-events':
-            print(f"sending message from {topic} to SOMEWHERE")
-        else:
-            print(f"[UNKNOWN TOPIC] {topic}: {value}")
+            logger.info(f"Consumed from {topic} | Partition {message.partition} | Offset {message.offset}")
+            logger.debug(f"Message content: {value}")
+
+            if topic == 'proxy-logs':
+                print(f"Sending message from {topic} to MYSQL")
+            elif topic == 'infra-metrics':
+                print(f"Sending message from {topic} to MONGODB")
+            elif topic == 'chaos-events':
+                print(f"Sending message from {topic} to SOMEWHERE")
+            else:
+                print(f"[UNKNOWN TOPIC] {topic}: {value}")
+
+        except Exception as e:
+            logger.error(f"Failed to process message: {e}", exc_info=True)
+
+def main():
+    while True:
+        try:
+            start_consumer()
+        except NoBrokersAvailable:
+            logger.error("Kafka brokers not available. Retrying in 10 seconds...")
+            time.sleep(10)
+        except KafkaError as e:
+            logger.error(f"Kafka error occurred: {e}. Retrying in 5 seconds...")
+            time.sleep(5)
+        except Exception as e:
+            logger.critical(f"Unexpected error: {e}", exc_info=True)
+            time.sleep(5)
 
 if __name__ == '__main__':
-  main()
+    main()
