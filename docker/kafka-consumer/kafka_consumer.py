@@ -1,6 +1,7 @@
 import logging
 import json
 import time
+import socket
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError, NoBrokersAvailable
 
@@ -15,6 +16,21 @@ KAFKA_BROKERS = [
 ]
 
 TOPICS = ["proxy-logs", "infra-metrics", "chaos-events"]
+
+def wait_for_kafka(brokers, timeout=5, max_attempts=20):
+    logger.info("Waiting for Kafka brokers to become available...")
+    for attempt in range(max_attempts):
+        for broker in brokers:
+            host, port = broker.split(":")
+            try:
+                with socket.create_connection((host, int(port)), timeout=timeout):
+                    logger.info(f"Connected to Kafka broker at {broker}")
+                    return
+            except Exception as e:
+                logger.debug(f"Broker {broker} not ready: {e}")
+        logger.warning(f"Attempt {attempt + 1}/{max_attempts} - Kafka not ready. Retrying in 5 seconds...")
+        time.sleep(5)
+    raise NoBrokersAvailable("Kafka brokers still not available after waiting.")
 
 def safe_deserialize_key(key):
     try:
@@ -64,12 +80,15 @@ def start_consumer():
             logger.error(f"Failed to process message: {e}", exc_info=True)
 
 def main():
+    try:
+        wait_for_kafka(KAFKA_BROKERS)
+    except NoBrokersAvailable as e:
+        logger.critical(f"{e} Shutting down.")
+        return
+
     while True:
         try:
             start_consumer()
-        except NoBrokersAvailable:
-            logger.error("Kafka brokers not available. Retrying in 10 seconds...")
-            time.sleep(10)
         except KafkaError as e:
             logger.error(f"Kafka error occurred: {e}. Retrying in 5 seconds...")
             time.sleep(5)
