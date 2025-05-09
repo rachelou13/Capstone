@@ -1,7 +1,5 @@
 import logging
 import json
-import time
-import socket
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError, NoBrokersAvailable
 
@@ -46,54 +44,38 @@ def safe_deserialize_value(value):
         logger.warning(f"Failed to deserialize value: {e}")
         return {}
 
-def start_consumer():
+def main(): 
     consumer = KafkaConsumer(
-        *TOPICS,
         bootstrap_servers=KAFKA_BROKERS,
         enable_auto_commit=True,
         group_id='consumer-group-live',
         key_deserializer=safe_deserialize_key,
         value_deserializer=safe_deserialize_value
     )
+    
+    # Need to make the tables for the info if they are not created already so we can store the log in the databases
 
-    logger.info("Kafka consumer started and subscribed.")
+    print("Kafka consumer is running")
+
+    consumer.subscribe(TOPICS)
+
+    print("Listeninig to proxy-logs, infra-metrics, and chaos-events")
 
     for message in consumer:
-        try:
-            topic = message.topic
-            value = message.value
+        logger.info(f"Consumed message {message.value} from topic {message.topic} from partition {message.partition} at offset {message.offset}")
+        topic = message.topic
+        value = message.value
 
-            logger.info(f"Consumed from {topic} | Partition {message.partition} | Offset {message.offset}")
-            logger.debug(f"Message content: {value}")
-
-            if topic == 'proxy-logs':
-                print(f"Sending message from {topic} to MYSQL")
-            elif topic == 'infra-metrics':
-                print(f"Sending message from {topic} to MONGODB")
-            elif topic == 'chaos-events':
-                print(f"Sending message from {topic} to SOMEWHERE")
-            else:
-                print(f"[UNKNOWN TOPIC] {topic}: {value}")
-
-        except Exception as e:
-            logger.error(f"Failed to process message: {e}", exc_info=True)
-
-def main():
-    try:
-        wait_for_kafka(KAFKA_BROKERS)
-    except NoBrokersAvailable as e:
-        logger.critical(f"{e} Shutting down.")
-        return
-
-    while True:
-        try:
-            start_consumer()
-        except KafkaError as e:
-            logger.error(f"Kafka error occurred: {e}. Retrying in 5 seconds...")
-            time.sleep(5)
-        except Exception as e:
-            logger.critical(f"Unexpected error: {e}", exc_info=True)
-            time.sleep(5)
+        if topic == 'proxy-logs':
+            # send to mysql in a nice way
+            print(f"Sending message from {topic} to MYSQL")
+        elif topic == 'infra-metrics':
+            # send to mongodb here
+            print(f"Sending message from {topic} to MONGODB")
+        elif topic == 'chaos-events':
+            print(f"sending message from {topic} to SOMEWHERE")
+        else:
+            print(f"[UNKNOWN TOPIC] {topic}: {value}")
 
 if __name__ == '__main__':
-    main()
+  main()
