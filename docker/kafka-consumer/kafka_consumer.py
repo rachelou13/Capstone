@@ -1,46 +1,25 @@
 import logging
 import json
-from kafka import KafkaConsumer
+from kafka.consumer import KafkaConsumer
 
-# Configure logging
+#Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__file__)
 
-def safe_deserialize_key(key):
-    try:
-        return key.decode('utf-8') if key else None
-    except Exception as e:
-        logger.warning(f"Failed to decode key: {e}")
-        return None
-
-def safe_deserialize_value(value):
-    try:
-        return json.loads(value.decode('utf-8')) if value else None
-    except Exception as e:
-        logger.warning(f"Failed to deserialize value: {e}")
-        return {}
-
-def main():
-    KAFKA_BROKERS = [
-    "kafka-0.kafka-headless.default.svc.cluster.local:9094",
-    "kafka-1.kafka-headless.default.svc.cluster.local:9094",
-    "kafka-2.kafka-headless.default.svc.cluster.local:9094"]
-
-    TOPICS = ["proxy-logs", "infra-metrics", "chaos-events"]
-
+def main(): 
     consumer = KafkaConsumer(
-        bootstrap_servers=KAFKA_BROKERS,
+        bootstrap_servers="kafka-0.kafka-headless.default.svc.cluster.local:9094,kafka-1.kafka-headless.default.svc.cluster.local:9094,kafka-2.kafka-headless.default.svc.cluster.local:9094",
+        auto_offset_reset='earliest',
         enable_auto_commit=True,
-        group_id='consumer-group-live',
-        key_deserializer=safe_deserialize_key,
-        value_deserializer=safe_deserialize_value
+        group_id='consumer-group-0',
+        key_deserializer=lambda k: k.decode('utf-8'),
+        value_deserializer=lambda v: json.loads(v.decode('utf-8'))
     )
-    
-    # Need to make the tables for the info if they are not created already so we can store the log in the databases
+# Need to make the tables for the info if they are not created already so we can store the log in the databases
 
     print("Kafka consumer is running")
 
-    consumer.subscribe(TOPICS)
+    consumer.subscribe(["proxy-logs", "infra-metrics", "chaos-events"])
 
     print("Listeninig to proxy-logs, infra-metrics, and chaos-events")
 
