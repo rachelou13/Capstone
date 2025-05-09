@@ -50,9 +50,8 @@ def start_consumer():
     consumer = KafkaConsumer(
         *TOPICS,
         bootstrap_servers=KAFKA_BROKERS,
-        auto_offset_reset='earliest',
         enable_auto_commit=True,
-        group_id='consumer-group-debug',
+        group_id='consumer-group-live',
         key_deserializer=safe_deserialize_key,
         value_deserializer=safe_deserialize_value
     )

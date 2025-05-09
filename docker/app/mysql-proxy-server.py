@@ -16,11 +16,12 @@ PRIMARY_HOST = "mysql-primary"
 REPLICA_HOST = "mysql-replica"
 
 # Info for our Kafka producer
-KAFKA_BROKER = ",".join([
+KAFKA_BROKER = [
     "kafka-0.kafka-headless.default.svc.cluster.local:9094",
     "kafka-1.kafka-headless.default.svc.cluster.local:9094",
     "kafka-2.kafka-headless.default.svc.cluster.local:9094"
-])
+]
+
 KAFKA_TOPIC = "proxy-logs"
 
 DB_CONFIG = {
@@ -75,7 +76,7 @@ def forward(source, destination, direction, client_ip):
                         "client_ip": client_ip,
                         "db_target": current_host,
                         "source": "proxy-server"
-                    })
+                    }).get(timeout=5)
                 break
     except (ConnectionResetError, OSError) as e:
         print(f"recv() failed: {e}")
@@ -122,7 +123,7 @@ def switch_to_other():
                     "event": "failover",
                     "db_target": REPLICA_HOST,
                     "source": "proxy-server"
-                })
+                }).get(timeout=5)
         else:
             print("Switching back to primary...")
             configure_as_replica(REPLICA_HOST, PRIMARY_HOST)
@@ -134,7 +135,7 @@ def switch_to_other():
                     "event": "reconnected",
                     "db_target": PRIMARY_HOST,
                     "source": "proxy-server"
-                })
+                }).get(timeout=5)
 
         current_host = other_host
         print(f"Now using {current_host} as active DB")
@@ -163,7 +164,7 @@ def monitor_and_failover():
                         "event": "up",
                         "db_target": current_host,
                         "source": "proxy-server"
-                    })
+                    }).get(timeout=5)
 
                 print(f"{current_host} is alive")
 
@@ -188,7 +189,7 @@ def monitor_and_failover():
                         "event": "down",
                         "db_target": current_host,
                         "source": "proxy-server"
-                    })
+                    }).get(timeout=5)
 
                 switch_to_other()
         else:
@@ -201,7 +202,7 @@ def monitor_and_failover():
                     "event": "down",
                     "db_target": current_host,
                     "source": "proxy-server"
-                })
+                }).get(timeout=5)
 
             switch_to_other()
 
@@ -223,7 +224,7 @@ def handle_client(client_socket):
                 "client_ip": client_ip,
                 "db_target": current_host,
                 "source": "proxy-server"
-            })
+            }).get(timeout=5)
         
         # Start bidirectional forwarding
         threading.Thread(target=forward, args=(client_socket, db_socket, "client->db", client_ip)).start()

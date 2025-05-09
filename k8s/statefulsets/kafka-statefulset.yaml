@@ -67,6 +67,12 @@ spec:
               name: controller
             - containerPort: 9094
               name: internal
+          readinessProbe:
+            tcpSocket:
+              port: 9094
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 6
           env:
             - name: KAFKA_ENABLE_KRAFT
               value: "yes"
