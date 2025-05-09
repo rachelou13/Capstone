@@ -271,6 +271,7 @@ def main():
         "event_type": "start",
         "experiment_type": "terminate_process",
         "parameters": {
+            "node": target_pod_info.get('node'),
             "pod_uid": pod_uid,
             "pod_name": target_pod_info.get('name'),
             "pod_namespace": target_pod_info.get('namespace'),

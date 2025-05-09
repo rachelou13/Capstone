@@ -1,14 +1,14 @@
 import logging
-import multiprocessing
 import argparse
 import uuid
 from datetime import datetime, timezone
-import time
+import threading
 
 from kubernetes import client, config
 from kubernetes.stream import stream
 
 from python.utils.kafka_producer import CapstoneKafkaProducer
+from python.data_scripts.infra_metrics_scraper import InfraMetricsScraper
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -110,6 +110,15 @@ def main():
         help="Duration you want the CPU stress test to run for (in seconds)"
     )
     parser.add_argument(
+        "-i",
+        "--scrape-interval",
+        required=False,
+        default=5,
+        type=int,
+        metavar="SCRAPE_INTERVAL",
+        help="How often (in seconds) you would like the scrape the CPU and memory usage on the target pod"
+    )
+    parser.add_argument(
         "-k",
         "--kube-config",
         type=str,
@@ -122,12 +131,17 @@ def main():
     pod_uid = args.pod_uid
     num_cores = args.cores
     duration = args.duration
+    scrape_interval = args.scrape_interval
     kube_config = args.kube_config
 
     #Start kafka producer
     kafka_prod = CapstoneKafkaProducer()
     experiment_id = str(uuid.uuid4())
     start_time = datetime.now(timezone.utc)
+
+    #Initialize scraper variables
+    infra_scraper = None
+    scraper_thread = None
 
     #Initialize success tracker
     cpu_stress_test_success = False
@@ -206,6 +220,7 @@ def main():
         "event_type": "start",
         "experiment_type": "resource_exhaustion",
         "parameters": {
+            "node": target_pod_info.get('node'),
             "pod_uid": pod_uid,
             "pod_name": target_pod_info.get('name'),
             "pod_namespace": target_pod_info.get('namespace'),
@@ -218,6 +233,17 @@ def main():
     if not kafka_prod.send_event(start_event, experiment_id):
         logger.warning(f"Failed to send START event to Kafka for experiment {experiment_id}. See producer log for error.")
 
+    #Start scraper for infra metrics
+    try:
+        infra_scraper = InfraMetricsScraper(experiment_id=experiment_id, target_pod_info=target_pod_info, kube_config=kube_config, scrape_interval=scrape_interval)
+        scraper_thread = threading.Thread(target=infra_scraper.start, daemon=True)
+        scraper_thread.start()
+        logger.info(f"InfraMetricsScraper initialized for pod UID {pod_uid}")
+    except Exception as e:
+        logger.error(f"Failed to initialize or start InfraMetricsScraper: {e}")
+        infra_scraper = None
+        scraper_thread = None
+
     #Execute experiment
     try:
         logger.info(f"Starting resource exhaustion experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid})")
@@ -226,6 +252,15 @@ def main():
         logger.error(f"Unexpected error occurred while running load on CPU(s): {e}")
     #Ensure end event is always sent, kafka producer is always closed
     finally:
+        #Close the scraper for infra metrics
+        if infra_scraper:
+            infra_scraper.close()
+            if scraper_thread and scraper_thread.is_alive():
+                logger.info("Waiting for scraper thread to finish...")
+                scraper_thread.join(timeout=10) 
+                if scraper_thread.is_alive():
+                    logger.warning("Scraper thread did not finish in time")
+
         #Send end event to kafka
         end_time = datetime.now(timezone.utc)
         end_event = {

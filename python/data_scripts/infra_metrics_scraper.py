@@ -1,8 +1,6 @@
 import logging
-import psutil
 import time
 from datetime import datetime, timezone
-import socket
 
 from kubernetes import client, config
 from kubernetes.stream import stream
@@ -43,7 +41,7 @@ class InfraMetricsScraper:
             logger.error(f"Failed to initialize Kubernetes client: {e}")
             if self.kafka_prod and self.kafka_prod.connected:
                 k8s_fail_event = {
-                    "timestamp": self.start_time.isoformat(), 
+                    "timestamp": datetime.now(timezone.utc).isoformat(), 
                     "event_type": "error",
                     "source": "infra_metrics_scraper", 
                     "error": f"K8s client init failed: {e}"
@@ -54,8 +52,9 @@ class InfraMetricsScraper:
         
         #Get allocatable CPU and memory
         if not self._resolve_target_node_info():
-            raise Exception(f"Unexpected ")
+            raise Exception(f"Unexpected error parsing allocated CPU and memory")
 
+    @staticmethod
     def _parse_quantity(quantity_str: str) -> float:
         if not isinstance(quantity_str, str) or not quantity_str:
             raise ValueError(f"Quantity must be a non-empty string, got '{quantity_str}'")
@@ -66,7 +65,7 @@ class InfraMetricsScraper:
             'Gi': 2**30, 
             'Ti': 2**40, 
             'Pi': 2**50, 
-            'Ei': 2**60,
+            'Ei': 2**60
         }
         decimal_suffixes = {
             'm': 1e-3,   
@@ -75,7 +74,7 @@ class InfraMetricsScraper:
             'G': 1e9,    
             'T': 1e12,   
             'P': 1e15,   
-            'E': 1e18,
+            'E': 1e18
         }
 
         numeric_part_str = quantity_str
@@ -166,33 +165,109 @@ class InfraMetricsScraper:
         return success_cpu and success_memory
         
     def _monitor(self):
-        self.start_time = datetime.now(timezone.utc)
+        if not self.target_node_name:
+            logger.error("Target node name is missing. Monitoring cannot start.")
+            self.run_loop = False
+            return
+        if self.allocatable_cpu is None or self.allocatable_memory is None:
+            logger.error(f"Allocatable CPU or allocatable memory are missing. Monitoring cannot start.")
+            self.run_loop = False
+            return
+        if not self.custom_obj_v1:
+            logger.error("Kubernetes CustomObjectsApi client is missing. Monitoring cannot start.")
+            self.run_loop = False
+            return
+            
+        if not self.kafka_prod:
+            logger.error("Kafka producer not is missing. Monitoring cannot start.")
+            self.run_loop = False
+            return
+        
         while self.run_loop: 
             time_scraped = datetime.now(timezone.utc)
+            node_metrics_data = None
+            cpu_usage = None
+            memory_usage = None
+            try: 
+                node_metrics_data = self.custom_obj_v1.get_cluster_custom_object(
+                    group="metrics.k8s.io",
+                    version="v1beta1",
+                    plural="nodes",
+                    name=self.target_node_name
+                )
+            except client.exceptions.ApiException as e:
+                logger.warning(f"Failed to fetch metrics for node '{self.target_node_name}': {e.reason}. Retrying after interval.")
+            except Exception as e:
+                logger.warning(f"Unexpected error fetching metrics for node '{self.target_node_name}': {e}. Retrying after interval.")
+            if node_metrics_data and 'usage' in node_metrics_data:
+                usage = node_metrics_data['usage']
+                cpu_usage_str = usage.get('cpu')
+                memory_usage_str = usage.get('memory')
+
+                if cpu_usage_str:
+                    try:
+                        cpu_usage = self._parse_quantity(cpu_usage_str)
+                    except ValueError as e:
+                        logger.error(f"Failed to parse CPU usage quantity '{cpu_usage_str}' for node '{self.target_node_name}': {e}")
+                else:
+                    logger.warning(f"CPU usage data not found in metrics for node '{self.target_node_name}'")
+                
+                if memory_usage_str:
+                    try:
+                        memory_usage = self._parse_quantity(memory_usage_str)
+                    except ValueError as e:
+                        logger.error(f"Failed to parse memory usage quantity '{memory_usage_str}' for node '{self.target_node_name}': {e}")
+                else:
+                    logger.warning(f"Memory usage data not found in metrics for node '{self.target_node_name}'")
+
+            cpu_util_percent = None
+            if cpu_usage is not None and self.allocatable_cpu > 0:
+                cpu_util_percent = (cpu_usage / self.allocatable_cpu) * 100.0
+            
+            memory_util_percent = None
+            if memory_usage is not None and self.allocatable_memory > 0:
+                memory_util_percent = (memory_usage / self.allocatable_memory) * 100.0
+            
             metrics_scrape = {
                 "timestamp": time_scraped.isoformat(),
                 "metrics": {
-                    "cpu_utilization": psutil.cpu_percent(interval=1), 
-                    "memory_usage": {
-                        "percent": psutil.virtual_memory().percent,
-                        "used": psutil.virtual_memory().used
+                    "cpu_usage": {
+                        "percent": cpu_util_percent,
+                        "used": cpu_usage
                     },
-                    #How to target specific nodes?
-                    "labels": {
-                        "node": socket.gethostname()
+                    "memory_usage": {
+                        "percent": memory_util_percent,
+                        "used": memory_usage
                     }
-                }
+                },  
+                "parameters": {
+                        "node": self.target_node_name,
+                        "pod_uid": self.target_pod_uid,
+                        "pod_name": self.target_pod_name,
+                        "pod_namespace": self.target_pod_namespace
+                    }
             }
 
-            if not self.kafka_prod.send_event(metrics_scrape):
-                logger.warning(f"Failed to send scraped INFRA METRICS to Kafka. See producer log for error.")
+            if not self.kafka_prod.send_event(metrics_scrape, self.experiment_id):
+                logger.warning(f"Failed to send scraped INFRA METRICS to Kafka for node {self.target_node_name}. See producer log for error.")
             else:
                 self.message_sent_count += 1
             time.sleep(self.scrape_interval)
+    
+    def start(self):
+        self.run_loop = True
+        self.start_time = datetime.now(timezone.utc)
+        self._monitor()
 
     def close(self):
         self.end_time = datetime.now(timezone.utc)
-        logger.info(f"Closing infra metrics scraper - logged metrics for {(self.end_time - self.start_time).total_seconds()} seconds - sent {self.message_sent_count} to Kafka")
+        duration = None
+        if self.start_time and self.end_time:
+            duration = (self.end_time - self.start_time).total_seconds()
+        if duration:
+            logger.info(f"Closing infra metrics scraper - logged metrics for {duration} seconds - sent {self.message_sent_count} messages to Kafka")
+        else:
+            logger.info(f"Closing infra metrics scraper - duration not calculated as start/end time incomplete.")
         self.run_loop = False
         self.kafka_prod.close()
 
