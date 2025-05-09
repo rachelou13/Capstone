@@ -7,29 +7,6 @@ from kafka.errors import KafkaError, NoBrokersAvailable
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-KAFKA_BROKERS = [
-    "kafka-0.kafka-headless.default.svc.cluster.local:9094",
-    "kafka-1.kafka-headless.default.svc.cluster.local:9094",
-    "kafka-2.kafka-headless.default.svc.cluster.local:9094"
-]
-
-TOPICS = ["proxy-logs", "infra-metrics", "chaos-events"]
-
-def wait_for_kafka(brokers, timeout=5, max_attempts=20):
-    logger.info("Waiting for Kafka brokers to become available...")
-    for attempt in range(max_attempts):
-        for broker in brokers:
-            host, port = broker.split(":")
-            try:
-                with socket.create_connection((host, int(port)), timeout=timeout):
-                    logger.info(f"Connected to Kafka broker at {broker}")
-                    return
-            except Exception as e:
-                logger.debug(f"Broker {broker} not ready: {e}")
-        logger.warning(f"Attempt {attempt + 1}/{max_attempts} - Kafka not ready. Retrying in 5 seconds...")
-        time.sleep(5)
-    raise NoBrokersAvailable("Kafka brokers still not available after waiting.")
-
 def safe_deserialize_key(key):
     try:
         return key.decode('utf-8') if key else None
@@ -44,7 +21,15 @@ def safe_deserialize_value(value):
         logger.warning(f"Failed to deserialize value: {e}")
         return {}
 
-def main(): 
+def main():
+    KAFKA_BROKERS = [
+    "kafka-0.kafka-headless.default.svc.cluster.local:9094",
+    "kafka-1.kafka-headless.default.svc.cluster.local:9094",
+    "kafka-2.kafka-headless.default.svc.cluster.local:9094"
+    ]
+
+    TOPICS = ["proxy-logs", "infra-metrics", "chaos-events"]
+
     consumer = KafkaConsumer(
         bootstrap_servers=KAFKA_BROKERS,
         enable_auto_commit=True,
