@@ -16,7 +16,11 @@ PRIMARY_HOST = "mysql-primary"
 REPLICA_HOST = "mysql-replica"
 
 # Info for our Kafka producer
-KAFKA_BROKER = "kafka:9092"
+KAFKA_BROKER = ",".join([
+    "kafka-0.kafka-headless.default.svc.cluster.local:9094",
+    "kafka-1.kafka-headless.default.svc.cluster.local:9094",
+    "kafka-2.kafka-headless.default.svc.cluster.local:9094"
+])
 KAFKA_TOPIC = "proxy-logs"
 
 DB_CONFIG = {
@@ -137,6 +141,7 @@ def switch_to_other():
 
 def monitor_and_failover():
     global current_host
+
     while True:
         print(f"Checking {current_host}...")
         connection = connect_to_database(current_host)
@@ -145,7 +150,7 @@ def monitor_and_failover():
             try:
                 cursor = connection.cursor()
                 cursor.execute("SELECT 1")
-                # Send db alive info to kafka
+
                 if producer:
                     producer.send(KAFKA_TOPIC, {
                         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -154,11 +159,23 @@ def monitor_and_failover():
                         "db_target": current_host,
                         "source": "proxy-server"
                     })
+
                 print(f"{current_host} is alive")
+
+                if current_host == REPLICA_HOST:
+                    print("Checking if primary is back...")
+                    if connect_to_database(PRIMARY_HOST):
+                        print("Primary is reachable again. Switching back...")
+                        configure_as_replica(REPLICA_HOST, PRIMARY_HOST)
+                        current_host = PRIMARY_HOST
+                        continue
+
                 time.sleep(10)
+
             except Error as e:
                 print(f"DB error on {current_host}: {e}")
                 connection.close()
+
                 if producer:
                     producer.send(KAFKA_TOPIC, {
                         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -167,9 +184,11 @@ def monitor_and_failover():
                         "db_target": current_host,
                         "source": "proxy-server"
                     })
+
                 switch_to_other()
         else:
             print(f"Connection failed for {current_host}. Switching...")
+
             if producer:
                 producer.send(KAFKA_TOPIC, {
                     "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -178,9 +197,11 @@ def monitor_and_failover():
                     "db_target": current_host,
                     "source": "proxy-server"
                 })
-        switch_to_other()
+
+            switch_to_other()
 
         time.sleep(5)
+
 
 #*****************************************************************************************************************************************************
 
