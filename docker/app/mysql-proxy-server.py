@@ -107,12 +107,14 @@ def forward(source, destination, direction, client_ip):
 
 def switch_to_other():
     global current_host
+
     other_host = REPLICA_HOST if current_host == PRIMARY_HOST else PRIMARY_HOST
 
     if connect_to_database(other_host):
         if other_host == REPLICA_HOST:
-            print("Promoting replica...")
+            print("Primary is down. Promoting replica...")
             promote_to_primary(REPLICA_HOST)
+
             if producer:
                 producer.send(KAFKA_TOPIC, {
                     "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -122,8 +124,9 @@ def switch_to_other():
                     "source": "proxy-server"
                 })
         else:
-            print("Primary is back — reconfiguring it as replica")
-            configure_as_replica(PRIMARY_HOST, REPLICA_HOST)
+            print("Switching back to primary...")
+            configure_as_replica(REPLICA_HOST, PRIMARY_HOST)
+
             if producer:
                 producer.send(KAFKA_TOPIC, {
                     "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -132,10 +135,12 @@ def switch_to_other():
                     "db_target": PRIMARY_HOST,
                     "source": "proxy-server"
                 })
+
         current_host = other_host
         print(f"Now using {current_host} as active DB")
     else:
-        print(f"Could not connect to either DB. Waiting...")
+        print(f"Could not connect to {other_host}. Staying with {current_host}")
+
 
 #*****************************************************************************************************************************************************
 
@@ -162,13 +167,13 @@ def monitor_and_failover():
 
                 print(f"{current_host} is alive")
 
+                # If we’re currently on the replica, check if the primary has recovered
                 if current_host == REPLICA_HOST:
                     print("Checking if primary is back...")
                     if connect_to_database(PRIMARY_HOST):
-                        print("Primary is reachable again. Switching back...")
+                        print("Primary is back. Reconfiguring...")
                         configure_as_replica(REPLICA_HOST, PRIMARY_HOST)
                         current_host = PRIMARY_HOST
-                        continue
 
                 time.sleep(10)
 

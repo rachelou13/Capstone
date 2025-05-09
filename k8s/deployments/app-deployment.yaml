@@ -17,6 +17,7 @@ spec:
       containers:
         - name: python-proxy-container
           image: lukasmccain0/capstone-app:latest
+          imagePullPolicy: Always 
           ports:
             - name: tcp-proxy
               containerPort: 3307
