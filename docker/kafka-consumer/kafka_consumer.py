@@ -1,7 +1,6 @@
 import logging
 import json
 from kafka import KafkaConsumer
-from kafka.errors import KafkaError, NoBrokersAvailable
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,8 +24,7 @@ def main():
     KAFKA_BROKERS = [
     "kafka-0.kafka-headless.default.svc.cluster.local:9094",
     "kafka-1.kafka-headless.default.svc.cluster.local:9094",
-    "kafka-2.kafka-headless.default.svc.cluster.local:9094"
-    ]
+    "kafka-2.kafka-headless.default.svc.cluster.local:9094"]
 
     TOPICS = ["proxy-logs", "infra-metrics", "chaos-events"]
 
