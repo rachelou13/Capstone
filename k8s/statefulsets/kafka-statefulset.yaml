@@ -6,7 +6,7 @@ metadata:
     app: kafka
 spec:
   serviceName: "kafka-headless"
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: kafka
@@ -73,7 +73,7 @@ spec:
             - name: KAFKA_CFG_PROCESS_ROLES
               value: "broker,controller"
             - name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
-              value: "0@kafka-0.kafka-headless.default.svc.cluster.local:9093,1@kafka-1.kafka-headless.default.svc.cluster.local:9093,2@kafka-2.kafka-headless.default.svc.cluster.local:9093"
+              value: "0@kafka-0.kafka-headless.default.svc.cluster.local:9093"
             - name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
               value: "CONTROLLER"
             - name: KAFKA_KRAFT_CLUSTER_ID
