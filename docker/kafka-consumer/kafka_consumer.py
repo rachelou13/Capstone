@@ -7,7 +7,7 @@ from kafka.errors import KafkaError, NoBrokersAvailable
 
 #Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 
 def wait_for_kafka(brokers, timeout=5, max_attempts=20):
     logger.info("Waiting for Kafka brokers to become available...")
@@ -39,7 +39,7 @@ def safe_deserialize_value(value):
         return {}
 
 def main():
-    KAFKA_BROKERS = ["kafka-headless.default.svc.cluster.local:9094"]
+    KAFKA_BROKERS = ["kafka-0.kafka-headless.default.svc.cluster.local:9094"]
 
     TOPICS = ["proxy-logs", "infra-metrics", "chaos-events"]
 
@@ -55,7 +55,8 @@ def main():
         enable_auto_commit=True,
         group_id='consumer-group-0',
         key_deserializer=lambda k: k.decode('utf-8'),
-        value_deserializer=lambda v: json.loads(v.decode('utf-8'))
+        value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+        api_version=(3, 6)
     )
     
     # Need to make the tables for the info if they are not created already so we can store the log in the databases
