@@ -18,4 +18,3 @@ spec:
   clusterIP: None
   selector:
     app: kafka
-  publishNotReadyAddresses: true 
