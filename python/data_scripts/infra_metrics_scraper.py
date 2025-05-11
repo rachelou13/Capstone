@@ -29,14 +29,23 @@ class InfraMetricsScraper:
         self.message_sent_count = 0
 
         #K8s client setup
+        if not self._k8s_client_setup():
+            raise Exception(f"Unexpected error initializing Kubernetes client(s)")
+        
+        #Get allocatable CPU and memory
+        if not self._resolve_target_node_info():
+            raise Exception(f"Unexpected error parsing allocated CPU and memory")
+        
+    def _k8s_client_setup(self):
         try:
             if self.kube_config:
-                config.load_kube_config(config_file=kube_config)
+                config.load_kube_config(config_file=self.kube_config)
             else:
                 config.load_incluster_config()
             self.core_v1 = client.CoreV1Api()
             self.custom_obj_v1 = client.CustomObjectsApi()
             logger.info("Kubernetes clients initialized")
+            return True
         except Exception as e:
             logger.error(f"Failed to initialize Kubernetes client: {e}")
             if self.kafka_prod and self.kafka_prod.connected:
@@ -48,11 +57,7 @@ class InfraMetricsScraper:
                 }
 
                 self.kafka_prod.send_event(k8s_fail_event, self.experiment_id)
-            return
-        
-        #Get allocatable CPU and memory
-        if not self._resolve_target_node_info():
-            raise Exception(f"Unexpected error parsing allocated CPU and memory")
+            return False
 
     @staticmethod
     def _parse_quantity(quantity_str: str) -> float:
@@ -68,6 +73,7 @@ class InfraMetricsScraper:
             'Ei': 2**60
         }
         decimal_suffixes = {
+            'n': 1e-9,
             'm': 1e-3,   
             'k': 1e3,    
             'M': 1e6,    
@@ -228,8 +234,11 @@ class InfraMetricsScraper:
             if memory_usage is not None and self.allocatable_memory > 0:
                 memory_util_percent = (memory_usage / self.allocatable_memory) * 100.0
             
+            logger.info(f"Sending kafka event with the following: {cpu_usage}, {cpu_util_percent}, {memory_usage}, {memory_util_percent}")
+            
             metrics_scrape = {
                 "timestamp": time_scraped.isoformat(),
+                "event_type": "monitor",
                 "metrics": {
                     "cpu_usage": {
                         "percent": cpu_util_percent,

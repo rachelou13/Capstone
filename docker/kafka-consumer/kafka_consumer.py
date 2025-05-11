@@ -54,8 +54,8 @@ def main():
         auto_offset_reset='earliest',
         enable_auto_commit=True,
         group_id='consumer-group-0',
-        key_deserializer=lambda k: k.decode('utf-8'),
-        value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+        key_deserializer=safe_deserialize_key,
+        value_deserializer=safe_deserialize_value,
         api_version=(3, 6)
     )
     
