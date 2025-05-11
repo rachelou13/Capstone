@@ -137,26 +137,22 @@ def find_and_terminate_process(api, pod_info, container_names, pod_uid, containe
             
     return process_terminated_count
 
-            
-                
-        
-
 def main():
     #Parse args from command line
     parser = argparse.ArgumentParser(description="Find and terminate processes in a Kubernetes pod")
     parser.add_argument(
         "-u",
         "--pod-uid",
-        required=True,
         type=str,
+        required=True,
         metavar="POD_UID",
         help="UID of the target Kubernetes pod"
     )
     parser.add_argument(
         "-c",
         "--container-id-prefix",
-        required=False,
         type=str,
+        required=False,
         default=None,
         metavar="CONTAINER_ID_PREFIX",
         help="Prefix of the target container ID. If the pod only has one container or you wish to target all containers in the pod matching the process pattern, omit this. This is a cgroup string match - not a container name."
@@ -164,8 +160,8 @@ def main():
     parser.add_argument(
         "-p",
         "--process-pattern",
-        required=False,
         type=str,
+        required=False,
         default=None,
         metavar="PROCESS_PATTERN",
         help="String pattern to search for within the command line or name of processes running inside target pod"
@@ -304,6 +300,7 @@ def main():
                 "error": f"Process termination failed: {e}"
             }
             kafka_prod.send_event(error_event, experiment_id)
+    
     #Ensure end event is always sent, kafka producer is always closed
     finally:
         #Send end event to kafka

@@ -10,11 +10,10 @@ from kubernetes.stream import stream
 from python.utils.kafka_producer import CapstoneKafkaProducer
 from python.data_scripts.infra_metrics_scraper import InfraMetricsScraper
 
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def exec_command_in_pod(api, pod_name, namespace, container_name, duration, command_list):
+def exec_command_in_pod(api, pod_name, namespace, container_name, command_list):
     try:
         logger.debug(f"Executing in {namespace}/{pod_name}/{container_name}: {command_list}")
         resp = stream(api.connect_get_namespaced_pod_exec,
@@ -24,7 +23,7 @@ def exec_command_in_pod(api, pod_name, namespace, container_name, duration, comm
                       command=command_list,
                       stderr=True, stdin=False,
                       stdout=True, tty=False,
-                      _request_timeout=duration + 60)
+                      _request_timeout=60)
 
         stdout = resp.strip() if resp else ""
         logger.debug(f"Exec stdout for '{command_list[0]}':\n{stdout[:200]}...")
@@ -33,55 +32,16 @@ def exec_command_in_pod(api, pod_name, namespace, container_name, duration, comm
         logger.error(f"ApiException when executing command in {namespace}/{pod_name}/{container_name}: {e.reason} - {e.body}")
         return None, str(e.body), 1
     except Exception as e:
-        logger.error(f"Unexpected error executing command in {namespace}/{pod_name}/{container_name}: {e}")
-        return None, str(e), 1
-
-def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
-    cpu_stress_test_success = False
-    pod_name = pod_info['name']
-    namespace = pod_info['namespace']
-
-    for container_name in container_names:
-        background_pids_file = f"/tmp/chaos_cpu_pids_{container_name}.txt"
-        command_string = (
-            'echo "Script started at $(date)" > /tmp/cpu_stress_internal.log; '
-            f"rm -f {background_pids_file}; "
-            f"for i in $(seq 1 {num_cores}); do "
-            f'  (bash -c "while true; do : ; done") & echo $! >> {background_pids_file}; '
-            f"done; "
-            f"echo 'CPU stress processes started, PIDs in {background_pids_file}'; "
-            f'echo "Before sleep at $(date)" >> /tmp/cpu_stress_internal.log; '
-            f"sleep {duration}; "
-            f'echo "After sleep at $(date)" >> /tmp/cpu_stress_internal.log; '
-            f"echo 'CPU stress duration ended, attempting to kill processes listed in {background_pids_file}'; "
-            f"if [ -f {background_pids_file} ]; then "
-            f"  xargs -r kill < {background_pids_file} || echo 'Some processes might not have been killed or already exited.'; "
-            f"  rm -f {background_pids_file}; "
-            f"else "
-            f"  echo 'PID file {background_pids_file} not found, cannot kill processes.'; "
-            f"fi; "
-            f'echo "Script ended at $(date)" >> /tmp/cpu_stress_internal.log;'
-        )
-        cpu_stress_cmd_list = [
-            '/bin/sh', '-c', command_string
-        ]
-        stdout, stderr, exit_code = exec_command_in_pod(api, pod_name, namespace, container_name, duration, command_list=cpu_stress_cmd_list)
-        if exit_code == 0:
-            logger.info(f"CPU stress command initiated successfully in {namespace}/{pod_name}/{container_name}. Command ran for {duration} seconds.")
-            if stderr:
-                logger.warning(f"CPU stress command in {container_name} produced stderr: {stderr}")
-            cpu_stress_test_success = True
+        error_message = str(e)
+        if "permission denied" in error_message.lower():
+            logger.error(f"Permission denied when executing iptables command in {namespace}/{pod_name}/{container_name}. Container may need privileged mode.")
         else:
-            logger.error(f"Failed to execute CPU stress command in {namespace}/{pod_name}/{container_name}. Exit code: {exit_code}, Stderr: {stderr}")
-            cpu_stress_test_success = False
-            break
-    return cpu_stress_test_success
-    
+            logger.error(f"Unexpected error executing command in {namespace}/{pod_name}/{container_name}: {e}")
+        return None, error_message, 1
 
 def main():
-    #Parse args from command line
-    parser = argparse.ArgumentParser(description="Stress test CPU by adding load to specified numbers of cores")
-    
+     #Parse args from command line
+    parser = argparse.ArgumentParser(description="Create network partitions to block traffic between Kubernetes pods")
     parser.add_argument(
         "-u",
         "--pod-uid",
@@ -97,23 +57,50 @@ def main():
         required=False,
         default=15,
         metavar="SECONDS",
-        help="Duration you want the CPU stress test to run for (in seconds)"
+        help="Duration you want to maintain the partition for (in seconds)"
     )
     parser.add_argument(
-        "-c",
-        "--cores",
+        "-t",
+        "--target-host",
+        type=str,
+        required=False,
+        default="mysql-primary",
+        metavar="HOST_NAME",
+        help="Host name to block traffic to"
+    )
+    parser.add_argument(
+        "-p",
+        "--port",
         type=int,
         required=False,
-        default=2,
-        metavar="CORES",
-        help="Number of CPU stress processes to start in the target container (e.g., corresponding to virtual cores available to the pod/container)."
+        default=3306,
+        metavar="PORT_NUMBER",
+        help="Port to block traffic on"
+    )
+    parser.add_argument(
+        "-pr",
+        "--protocol",
+        type=str,
+        required=False,
+        default="tcp",
+        choices=["tcp", "udp", "icmp"],
+        help="Protocol to block (tcp, udp, or icmp)"
+    )
+    parser.add_argument(
+        "-dir",
+        "--direction",
+        type=str,
+        required=False,
+        default="outbound",
+        choices=["outbound", "inbound", "both"],
+        help="Direction of traffic to block (outbound, inbound, or both)"
     )
     parser.add_argument(
         "-i",
         "--scrape-interval",
+        type=int,
         required=False,
         default=5,
-        type=int,
         metavar="SCRAPE_INTERVAL",
         help="How often (in seconds) to scrape metrics"
     )
@@ -126,10 +113,14 @@ def main():
         metavar="KUBE_CONFIG",
         help="Path to kubeconfig file (if not running in-cluster)"
     )
+
     args = parser.parse_args()
     pod_uid = args.pod_uid
-    num_cores = args.cores
     duration = args.duration
+    target_host = args.target_host
+    port = args.port
+    protocol = args.protocol
+    direction = args.direction
     scrape_interval = args.scrape_interval
     kube_config = args.kube_config
 
@@ -142,8 +133,12 @@ def main():
     infra_scraper = None
     scraper_thread = None
 
-    #Initialize success tracker
-    cpu_stress_test_success = False
+    #Initialize success trackers
+    partition_successful = False
+    rollback_successful = False
+    partition_validated = None
+    rollback_validated = None
+    rules_applied = 0
 
     #K8s client setup
     try:
@@ -160,7 +155,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "resource_exhaustion", 
+                "experiment_type": "network_partition", 
                 "error": f"K8s client init failed: {e}"
              }
 
@@ -202,7 +197,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "resource_exhaustion",
+                "experiment_type": "network_partition",
                 "parameters": {
                     "pod_uid": pod_uid
                 },
@@ -211,7 +206,7 @@ def main():
 
             kafka_prod.send_event(pod_fail_event, experiment_id)
         return
-
+    
     #Start scraper for infra metrics
     try:
         infra_scraper = InfraMetricsScraper(experiment_id=experiment_id, target_pod_info=target_pod_info, kube_config=kube_config, scrape_interval=scrape_interval)
@@ -225,16 +220,19 @@ def main():
 
     #Send start event to kafka
     start_event = {
-        "timestamp": start_time.isoformat(),
-        "experiment_id": experiment_id,
-        "event_type": "start",
-        "experiment_type": "resource_exhaustion",
-        "parameters": {
+    "timestamp": start_time.isoformat(),
+    "experiment_id": experiment_id,
+    "event_type": "start",
+    "experiment_type": "network_partition",
+    "parameters": {
             "node": target_pod_info.get('node'),
             "pod_uid": pod_uid,
             "pod_name": target_pod_info.get('name'),
             "pod_namespace": target_pod_info.get('namespace'),
-            "cpu_cores": num_cores,
+            "target_host": target_host,
+            "port": port,
+            "protocol": protocol,
+            "direction": direction,
             "spec_duration": duration
         }
     }
@@ -243,24 +241,24 @@ def main():
     if not kafka_prod.send_event(start_event, experiment_id):
         logger.warning(f"Failed to send START event to Kafka for experiment {experiment_id}. See producer log for error.")
 
-    #Execute experiment
+    #Execute the experiment
     try:
-        logger.info(f"Starting resource exhaustion experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid})")
-        cpu_stress_test_success = cpu_stress_in_pod(core_v1, target_pod_info, target_container_names, num_cores, duration)
+        #Put call to apply_iptables_rules here
+        pass
     except Exception as e:
-        logger.error(f"Unexpected error occurred while running load on CPU(s): {e}")
+        logger.error(f"Unexpected error occurred while blocking network traffic: {e}")
         if kafka_prod and kafka_prod.connected:
             error_event = {
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "resource_exhaust",
+                "experiment_type": "network_partition",
                 "parameters":
                     start_event["parameters"],
                 "error": f"Process termination failed: {e}"
             }
             kafka_prod.send_event(error_event, experiment_id)
-
+    
     #Ensure end event is always sent, kafka producer is always closed
     finally:
         #Close the scraper for infra metrics
@@ -274,15 +272,21 @@ def main():
 
         #Send end event to kafka
         end_time = datetime.now(timezone.utc)
+        duration = (end_time - start_time).total_seconds()
+
         end_event = {
             "timestamp": end_time.isoformat(),
             "experiment_id": experiment_id,
             "event_type": "end",
-            "experiment_type": "resource_exhaustion",
-            "parameters":
-                    start_event["parameters"],
-            "success": cpu_stress_test_success,
-            "duration": (end_time - start_time).total_seconds()
+            "experiment_type": "network_partition",
+            "parameters": start_event["parameters"],
+            "success": partition_successful and rollback_successful,
+            "details": {
+                "partition_validated": partition_validated,
+                "rollback_validated": rollback_validated,
+                "rules_applied": rules_applied
+            },
+            "duration": duration
         }
 
         #Kafka producer send event function returns True if successful, False if failed
@@ -290,7 +294,7 @@ def main():
                 logger.warning(f"Failed to send END event to Kafka for experiment {experiment_id}. See producer log for error.")
 
         kafka_prod.close()
-        logger.info(f"Experiment {experiment_id} finished. Duration: {(end_time - start_time).total_seconds():.2f}s.")
+        logger.info(f"Experiment {experiment_id} finished. Duration: {duration:.2f}s.")
 
 if __name__ == "__main__":
     main()

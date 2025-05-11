@@ -169,7 +169,64 @@ class InfraMetricsScraper:
             logger.warning(f"Allocatable Memory quantity not found for node '{self.target_node_name}'.")
 
         return success_cpu and success_memory
-        
+
+    def _get_pod_metrics(self):
+        if not self.custom_obj_v1:
+            logger.error("CustomObjectsApi client is missing. Cannot fetch pod metrics.")
+            return None
+            
+        try:
+            pod_metrics = self.custom_obj_v1.get_namespaced_custom_object(
+                group="metrics.k8s.io",
+                version="v1beta1",
+                namespace=self.target_pod_namespace,
+                plural="pods",
+                name=self.target_pod_name
+            )
+            
+            container_metrics = {}
+            if pod_metrics and 'containers' in pod_metrics:
+                for container in pod_metrics['containers']:
+                    container_name = container.get('name')
+                    if not container_name:
+                        continue
+                        
+                    container_usage = container.get('usage', {})
+                    cpu_usage_str = container_usage.get('cpu')
+                    memory_usage_str = container_usage.get('memory')
+                    
+                    cpu_usage = None
+                    if cpu_usage_str:
+                        try:
+                            cpu_usage = self._parse_quantity(cpu_usage_str)
+                        except ValueError as e:
+                            logger.error(f"Failed to parse CPU usage '{cpu_usage_str}' for container '{container_name}': {e}")
+                    
+                    memory_usage = None
+                    if memory_usage_str:
+                        try:
+                            memory_usage = self._parse_quantity(memory_usage_str)
+                        except ValueError as e:
+                            logger.error(f"Failed to parse memory usage '{memory_usage_str}' for container '{container_name}': {e}")
+                    
+                    container_metrics[container_name] = {
+                        "cpu_usage": cpu_usage,
+                        "memory_usage": memory_usage
+                    }
+                    
+                logger.debug(f"Retrieved metrics for {len(container_metrics)} containers in pod {self.target_pod_name}")
+                return container_metrics
+            else:
+                logger.warning(f"No container metrics found for pod {self.target_pod_namespace}/{self.target_pod_name}")
+                return None
+                
+        except client.exceptions.ApiException as e:
+            logger.warning(f"Failed to fetch metrics for pod '{self.target_pod_namespace}/{self.target_pod_name}': {e.reason}")
+            return None
+        except Exception as e:
+            logger.warning(f"Unexpected error fetching metrics for pod '{self.target_pod_namespace}/{self.target_pod_name}': {e}")
+            return None
+
     def _monitor(self):
         if not self.target_node_name:
             logger.error("Target node name is missing. Monitoring cannot start.")
@@ -191,6 +248,8 @@ class InfraMetricsScraper:
         
         while self.run_loop: 
             time_scraped = datetime.now(timezone.utc)
+            
+            # Get node metrics
             node_metrics_data = None
             cpu_usage = None
             memory_usage = None
@@ -205,6 +264,7 @@ class InfraMetricsScraper:
                 logger.warning(f"Failed to fetch metrics for node '{self.target_node_name}': {e.reason}. Retrying after interval.")
             except Exception as e:
                 logger.warning(f"Unexpected error fetching metrics for node '{self.target_node_name}': {e}. Retrying after interval.")
+                
             if node_metrics_data and 'usage' in node_metrics_data:
                 usage = node_metrics_data['usage']
                 cpu_usage_str = usage.get('cpu')
@@ -234,28 +294,47 @@ class InfraMetricsScraper:
             if memory_usage is not None and self.allocatable_memory > 0:
                 memory_util_percent = (memory_usage / self.allocatable_memory) * 100.0
             
-            logger.info(f"Sending kafka event with the following: {cpu_usage}, {cpu_util_percent}, {memory_usage}, {memory_util_percent}")
+            # Get container metrics
+            container_metrics = self._get_pod_metrics()
+            
+            log_message = f"Sending kafka event with:\nNode metrics: {cpu_usage}, {cpu_util_percent}, {memory_usage}, {memory_util_percent}"
+            if container_metrics:
+                container_logs = []
+                for container_name, metrics in container_metrics.items():
+                    container_logs.append(f"{container_name}: CPU={metrics['cpu_usage']}, Memory={metrics['memory_usage']}")
+                log_message += f"\nContainer metrics: {' | '.join(container_logs)}"
+            logger.info(log_message)
+
+            if container_metrics:
+                logger.info(f"Including container metrics for {len(container_metrics)} containers")
             
             metrics_scrape = {
                 "timestamp": time_scraped.isoformat(),
                 "event_type": "monitor",
                 "metrics": {
-                    "cpu_usage": {
-                        "percent": cpu_util_percent,
-                        "used": cpu_usage
+                    "node": {
+                        "cpu_usage": {
+                            "percent": cpu_util_percent,
+                            "used": cpu_usage
+                        },
+                        "memory_usage": {
+                            "percent": memory_util_percent,
+                            "used": memory_usage
+                        }
                     },
-                    "memory_usage": {
-                        "percent": memory_util_percent,
-                        "used": memory_usage
-                    }
+                    "containers": {}
                 },  
                 "parameters": {
-                        "node": self.target_node_name,
-                        "pod_uid": self.target_pod_uid,
-                        "pod_name": self.target_pod_name,
-                        "pod_namespace": self.target_pod_namespace
-                    }
+                    "node": self.target_node_name,
+                    "pod_uid": self.target_pod_uid,
+                    "pod_name": self.target_pod_name,
+                    "pod_namespace": self.target_pod_namespace
+                }
             }
+            
+            # Add container metrics if available
+            if container_metrics:
+                metrics_scrape["metrics"]["containers"] = container_metrics
 
             if not self.kafka_prod.send_event(metrics_scrape, self.experiment_id):
                 logger.warning(f"Failed to send scraped INFRA METRICS to Kafka for node {self.target_node_name}. See producer log for error.")
