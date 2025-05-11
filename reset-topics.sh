@@ -22,7 +22,9 @@ kubectl run -it kafka-client --image=bitnami/kafka:3.6.0 --rm --restart=Never --
 
 #Once inside kafka-client command line, run the below commands
 <<COMMENT
-kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9094 --list (MAKE SURE YOU DON'T SEE ANY TOPICS - IF YOU DO DOUBLE CHECK THAT YOUR CONSUMER IS NOT RUNNNING AND RERUN SCRIPT)
+kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9094 --list 
+
+MAKE SURE YOU DON'T SEE ANY TOPICS - IF YOU DO DOUBLE CHECK THAT YOUR CONSUMER IS NOT RUNNNING AND RERUN SCRIPT
 
 kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9094 --create --topic chaos-events --partitions 1 --replication-factor 1
 kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9094 --create --topic infra-metrics --partitions 1 --replication-factor 1
