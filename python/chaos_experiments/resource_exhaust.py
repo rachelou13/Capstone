@@ -43,38 +43,76 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
 
     for container_name in container_names:
         background_pids_file = f"/tmp/chaos_cpu_pids_{container_name}.txt"
+        
         command_string = (
             'echo "Script started at $(date)" > /tmp/cpu_stress_internal.log; '
             f"rm -f {background_pids_file}; "
+            # Cleanup function
+            "cleanup() { "
+            f"  echo 'Cleaning up stress processes' >> /tmp/cpu_stress_internal.log; "
+            f"  if [ -f {background_pids_file} ]; then "
+            f"    echo 'PIDs to kill:' >> /tmp/cpu_stress_internal.log; "
+            f"    cat {background_pids_file} >> /tmp/cpu_stress_internal.log; "
+            f"    while read pid; do "
+            f"      kill -9 $pid 2>/dev/null || echo \"Failed to kill PID $pid\" >> /tmp/cpu_stress_internal.log; "
+            f"    done < {background_pids_file}; "
+            f"    rm -f {background_pids_file}; "
+            f"  fi; "
+            "}; "
+            "trap cleanup EXIT INT TERM; "
             f"for i in $(seq 1 {num_cores}); do "
-            f'  (bash -c "while true; do : ; done") & echo $! >> {background_pids_file}; '
+            f'  (while true; do : ; done) & echo $! >> {background_pids_file}; '
             f"done; "
             f"echo 'CPU stress processes started, PIDs in {background_pids_file}'; "
             f'echo "Before sleep at $(date)" >> /tmp/cpu_stress_internal.log; '
             f"sleep {duration}; "
             f'echo "After sleep at $(date)" >> /tmp/cpu_stress_internal.log; '
-            f"echo 'CPU stress duration ended, attempting to kill processes listed in {background_pids_file}'; "
-            f"if [ -f {background_pids_file} ]; then "
-            f"  xargs -r kill < {background_pids_file} || echo 'Some processes might not have been killed or already exited.'; "
-            f"  rm -f {background_pids_file}; "
-            f"else "
-            f"  echo 'PID file {background_pids_file} not found, cannot kill processes.'; "
-            f"fi; "
+            "cleanup; "
             f'echo "Script ended at $(date)" >> /tmp/cpu_stress_internal.log;'
         )
+        
         cpu_stress_cmd_list = [
             '/bin/sh', '-c', command_string
         ]
-        stdout, stderr, exit_code = exec_command_in_pod(api, pod_name, namespace, container_name, duration, command_list=cpu_stress_cmd_list)
+        
+        stdout, stderr, exit_code = exec_command_in_pod(api, pod_name, namespace, container_name, duration + 30, command_list=cpu_stress_cmd_list)
+        
         if exit_code == 0:
-            logger.info(f"CPU stress command initiated successfully in {namespace}/{pod_name}/{container_name}. Command ran for {duration} seconds.")
-            if stderr:
-                logger.warning(f"CPU stress command in {container_name} produced stderr: {stderr}")
-            cpu_stress_test_success = True
+            logger.info(f"CPU stress command completed in {namespace}/{pod_name}/{container_name}. Verifying cleanup...")
+            
+            # Check if PID file still exists
+            verify_command = [
+                '/bin/sh', 
+                '-c', 
+                f"[ -f {background_pids_file} ] && echo 'PID file still exists' || echo 'PID file removed'"
+            ]
+            verify_stdout, verify_stderr, verify_exit = exec_command_in_pod(api, pod_name, namespace, container_name, 10, command_list=verify_command)
+            
+            if verify_exit == 0 and "PID file removed" in verify_stdout:
+                logger.info(f"Cleanup verified in {container_name} - PID file successfully removed")
+                cpu_stress_test_success = True
+            else:
+                logger.warning(f"Cleanup may not be complete in {container_name}: {verify_stdout}")
+                # Try one more cleanup
+                final_cleanup = [
+                    '/bin/sh',
+                    '-c',
+                    f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'"
+                ]
+                exec_command_in_pod(api, pod_name, namespace, container_name, 10, command_list=final_cleanup)
+                cpu_stress_test_success = True
         else:
-            logger.error(f"Failed to execute CPU stress command in {namespace}/{pod_name}/{container_name}. Exit code: {exit_code}, Stderr: {stderr}")
+            logger.error(f"CPU stress command failed in {namespace}/{pod_name}/{container_name}. Exit code: {exit_code}, Stderr: {stderr}")
+            # Try emergency cleanup
+            emergency_cleanup = [
+                '/bin/sh',
+                '-c',
+                f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'"
+            ]
+            exec_command_in_pod(api, pod_name, namespace, container_name, 10, command_list=emergency_cleanup)
             cpu_stress_test_success = False
             break
+            
     return cpu_stress_test_success
     
 
