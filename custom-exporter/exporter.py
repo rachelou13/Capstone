@@ -19,6 +19,7 @@ def metrics():
         )
         cursor = mysql_conn.cursor(dictionary=True)
 
+        # Summary stats
         cursor.execute("SELECT AVG(cpu_percent) AS avg_cpu, AVG(mem_percent) AS avg_mem, COUNT(*) as total FROM infra_metrics")
         row = cursor.fetchone()
         if row:
@@ -26,6 +27,18 @@ def metrics():
             lines.append(f'infra_avg_mem_percent {row["avg_mem"]:.2f}')
             lines.append(f'infra_metric_total_scrapes {row["total"]}')
         
+        # Raw metrics
+        cursor.execute("SELECT * FROM infra_metrics ORDER BY timestamp DESC LIMIT 1")
+        for row in cursor.fetchall():
+            pod = row.get("pod_name", "unknown")
+            node = row.get("node_name", "unknown")
+            namespace = row.get("pod_namespace", "default")
+
+            lines.append(f'infra_cpu_usage_percent{{pod="{pod}", node="{node}", namespace="{namespace}"}} {row["cpu_percent"]}')
+            lines.append(f'infra_cpu_usage_absolute{{pod="{pod}", node="{node}", namespace="{namespace}"}} {row["cpu_used"]}')
+            lines.append(f'infra_mem_usage_percent{{pod="{pod}", node="{node}", namespace="{namespace}"}} {row["mem_percent"]}')
+            lines.append(f'infra_mem_usage_absolute{{pod="{pod}", node="{node}", namespace="{namespace}"}} {row["mem_used"]}')
+
         cursor.close()
         mysql_conn.close()
     except Exception as e:
