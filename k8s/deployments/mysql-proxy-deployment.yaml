@@ -123,18 +123,17 @@ spec:
           env:
             - name: MYSQL_ROOT_PASSWORD
               value: "root"
-            - name: MYSQL_DATABASE
-              value: "summary_db"
             - name: MYSQL_ROOT_HOST
               value: "%"
           volumeMounts:
             - name: mysql-data
               mountPath: /var/lib/mysql
-  volumeClaimTemplates:
-    - metadata:
-        name: mysql-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 1Gi
+            - name: init-script
+              mountPath: /docker-entrypoint-initdb.d/init_db.sql
+              subPath: init_db.sql
+      volumes:
+        - name: init-script
+          configMap:
+            name: mysql-init-script
+        - name: mysql-data
+          emptyDir: {}

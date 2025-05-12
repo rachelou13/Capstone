@@ -2,6 +2,8 @@ import logging
 import json
 import socket
 import time
+import pymysql
+from pymongo import MongoClient
 from kafka.consumer import KafkaConsumer
 from kafka.errors import KafkaError, NoBrokersAvailable
 
@@ -43,6 +45,20 @@ def main():
 
     TOPICS = ["proxy-logs", "infra-metrics", "chaos-events"]
 
+    # MySQL connection
+    mysql_conn = pymysql.connect(
+        host="mysql-summary-records",
+        user="root",
+        password="root",
+        database="summary_db"
+    )
+    mysql_cursor = mysql_conn.cursor()
+
+    # MongoDB connection
+    mongo_client = MongoClient("mongodb://root:root@mongodb-service:27017/")
+    mongo_db = mongo_client["metrics_db"]
+    chaos_collection = mongo_db["chaos_events"]
+
     try:
         wait_for_kafka(KAFKA_BROKERS)
     except NoBrokersAvailable as e:
@@ -78,10 +94,51 @@ def main():
             # send to mysql in a nice way
             print(f"Sending message from {topic} to MYSQL")
         elif topic == 'infra-metrics':
-            # send to mongodb here
-            print(f"Sending message from {topic} to MONGODB")
+            # send to mysql here
+            print(f"Sending message from {topic} to MYSQL")
+
+            try:
+                ts = value.get("timestamp")
+                source = value.get("experiment_type", "infra_metrics_scraper")
+                metrics = value.get("metrics", {})
+                node_metrics = metrics.get("node", {})
+
+                cpu_percent = node_metrics.get("cpu_usage", {}).get("percent", 0.0)
+                cpu_used = node_metrics.get("cpu_usage", {}).get("used", 0.0)
+                mem_percent = node_metrics.get("memory_usage", {}).get("percent", 0.0)
+                mem_used = node_metrics.get("memory_usage", {}).get("used", 0.0)
+
+                params = value.get("parameters", {})
+                node_name = params.get("node")
+                pod_name = params.get("pod_name")
+                pod_namespace = params.get("pod_namespace")
+
+                query = """
+                INSERT INTO infra_metrics (
+                    timestamp, source, cpu_percent, cpu_used, mem_percent, mem_used,
+                    node_name, pod_name, pod_namespace
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                mysql_cursor.execute(query, (
+                    ts, source, cpu_percent, cpu_used,
+                    mem_percent, mem_used,
+                    node_name, pod_name, pod_namespace
+                ))
+                mysql_conn.commit()
+                logger.info(f"Inserted metric: {metric}, value: {val}, source: {source}")
+            except Exception as e:
+                logger.error(f"Failed to insert into MySQL: {e}")
+
         elif topic == 'chaos-events':
-            print(f"sending message from {topic} to SOMEWHERE")
+            # send to mongodb here
+            print(f"sending message from {topic} to MongoDB")
+            
+            try:
+                chaos_collection.insert_one(value)
+                logger.info("Inserted chaos event: %s from %s", value.get("event_type"), value.get("experiment_type"))
+            except Exception as e:
+                logger.error(f"Failed to insert into MongoDB: {e}")
+
         else:
             print(f"[UNKNOWN TOPIC] {topic}: {value}")
 
