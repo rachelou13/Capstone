@@ -34,12 +34,22 @@ current_host = PRIMARY_HOST
 
 #*****************************************************************************************************************************************************
 # Initialize Kafka producer
-try:
-    producer = KafkaProducer(bootstrap_servers=KAFKA_BROKER,value_serializer=lambda v: json.dumps(v).encode('utf-8'))
-    print("Kafka producer ready")
-except Exception as e:
-    producer = None
-    print(f"Kafka producer failed to initialize: {e}")
+def init_kafka_producer(retries=5, delay=5):
+    for attempt in range(retries):
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers=KAFKA_BROKER,
+                value_serializer=lambda v: json.dumps(v).encode('utf-8')
+            )
+            print("Kafka producer ready")
+            return producer
+        except Exception as e:
+            print(f"Kafka producer failed to initialize (attempt {attempt+1}): {e}")
+            time.sleep(delay)
+    print("Kafka not available after retries")
+    return None
+
+producer = init_kafka_producer()
 
 #*****************************************************************************************************************************************************
 
