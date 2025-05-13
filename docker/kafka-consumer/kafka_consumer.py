@@ -167,7 +167,7 @@ def main():
             
             try:
                 chaos_collection.insert_one(value)
-                logger.info("Inserted chaos event: %s from %s", value.get("event_type"), value.get("experiment_type"))
+                logger.info("Inserted chaos event: %s from %s", value.get("event_type"), value.get("source"))
             except Exception as e:
                 logger.error(f"Failed to insert into MongoDB: {e}")
 
