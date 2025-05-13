@@ -5,11 +5,18 @@ CREATE TABLE IF NOT EXISTS infra_metrics (
     id INT AUTO_INCREMENT PRIMARY KEY,
     timestamp DATETIME,
     source VARCHAR(100),
+    experiment_detected BOOLEAN DEFAULT FALSE,
     cpu_percent FLOAT,
     cpu_used FLOAT,
     mem_percent FLOAT,
     mem_used FLOAT,
     node_name VARCHAR(100),
     pod_name VARCHAR(100),
-    pod_namespace VARCHAR(100)
+    pod_namespace VARCHAR(100),
+    container_name VARCHAR(100) NULL,
+    metric_level VARCHAR(20),
+    INDEX idx_timestamp (timestamp),
+    INDEX idx_experiment (experiment_detected),
+    INDEX idx_container (container_name),
+    INDEX idx_metric_level (metric_level)
 );

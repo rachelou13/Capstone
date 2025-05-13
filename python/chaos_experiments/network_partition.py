@@ -8,7 +8,6 @@ from kubernetes import client, config
 from kubernetes.stream import stream
 
 from python.utils.kafka_producer import CapstoneKafkaProducer
-from python.data_scripts.infra_metrics_scraper import InfraMetricsScraper
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -96,15 +95,6 @@ def main():
         help="Direction of traffic to block (outbound, inbound, or both)"
     )
     parser.add_argument(
-        "-i",
-        "--scrape-interval",
-        type=int,
-        required=False,
-        default=5,
-        metavar="SCRAPE_INTERVAL",
-        help="How often (in seconds) to scrape metrics"
-    )
-    parser.add_argument(
         "-k",
         "--kube-config",
         type=str,
@@ -121,17 +111,12 @@ def main():
     port = args.port
     protocol = args.protocol
     direction = args.direction
-    scrape_interval = args.scrape_interval
     kube_config = args.kube_config
 
     #Start kafka producer
     kafka_prod = CapstoneKafkaProducer()
     experiment_id = str(uuid.uuid4())
     start_time = datetime.now(timezone.utc)
-
-    #Initialize scraper variables
-    infra_scraper = None
-    scraper_thread = None
 
     #Initialize success trackers
     partition_successful = False
@@ -155,7 +140,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "network_partition", 
+                "source": "network_partition", 
                 "error": f"K8s client init failed: {e}"
              }
 
@@ -197,7 +182,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "network_partition",
+                "source": "network_partition",
                 "parameters": {
                     "pod_uid": pod_uid
                 },
@@ -206,24 +191,13 @@ def main():
 
             kafka_prod.send_event(pod_fail_event, experiment_id)
         return
-    
-    #Start scraper for infra metrics
-    try:
-        infra_scraper = InfraMetricsScraper(experiment_id=experiment_id, target_pod_info=target_pod_info, kube_config=kube_config, scrape_interval=scrape_interval)
-        scraper_thread = threading.Thread(target=infra_scraper.start, daemon=True)
-        scraper_thread.start()
-        logger.info(f"InfraMetricsScraper initialized for pod UID {pod_uid}")
-    except Exception as e:
-        logger.error(f"Failed to initialize or start InfraMetricsScraper: {e}")
-        infra_scraper = None
-        scraper_thread = None
 
     #Send start event to kafka
     start_event = {
     "timestamp": start_time.isoformat(),
     "experiment_id": experiment_id,
     "event_type": "start",
-    "experiment_type": "network_partition",
+    "source": "network_partition",
     "parameters": {
             "node": target_pod_info.get('node'),
             "pod_uid": pod_uid,
@@ -252,7 +226,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "network_partition",
+                "source": "network_partition",
                 "parameters":
                     start_event["parameters"],
                 "error": f"Process termination failed: {e}"
@@ -261,15 +235,6 @@ def main():
     
     #Ensure end event is always sent, kafka producer is always closed
     finally:
-        #Close the scraper for infra metrics
-        if infra_scraper:
-            infra_scraper.close()
-            if scraper_thread and scraper_thread.is_alive():
-                logger.info("Waiting for scraper thread to finish...")
-                scraper_thread.join(timeout=10) 
-                if scraper_thread.is_alive():
-                    logger.warning("Scraper thread did not finish in time")
-
         #Send end event to kafka
         end_time = datetime.now(timezone.utc)
         duration = (end_time - start_time).total_seconds()
@@ -278,7 +243,7 @@ def main():
             "timestamp": end_time.isoformat(),
             "experiment_id": experiment_id,
             "event_type": "end",
-            "experiment_type": "network_partition",
+            "source": "network_partition",
             "parameters": start_event["parameters"],
             "success": partition_successful and rollback_successful,
             "details": {

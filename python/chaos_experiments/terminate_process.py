@@ -9,7 +9,7 @@ from kubernetes.stream import stream
 
 from python.utils.kafka_producer import CapstoneKafkaProducer
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def exec_command_in_pod(api, pod_name, namespace, container_name, command_list):
@@ -204,7 +204,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "terminate_process", 
+                "source": "terminate_process", 
                 "error": f"K8s client init failed: {e}"
              }
 
@@ -249,7 +249,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "terminate_process",
+                "source": "terminate_process",
                 "parameters": {
                     "pod_uid": pod_uid
                 },
@@ -265,7 +265,7 @@ def main():
         "timestamp": start_time.isoformat(),
         "experiment_id": experiment_id,
         "event_type": "start",
-        "experiment_type": "terminate_process",
+        "source": "terminate_process",
         "parameters": {
             "node": target_pod_info.get('node'),
             "pod_uid": pod_uid,
@@ -294,7 +294,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "terminate_process",
+                "source": "terminate_process",
                 "parameters":
                     start_event["parameters"],
                 "error": f"Process termination failed: {e}"
@@ -310,7 +310,7 @@ def main():
             "timestamp": end_time.isoformat(),
             "experiment_id": experiment_id,
             "event_type": "end",
-            "experiment_type": "terminate_process",
+            "source": "terminate_process",
             "parameters":
                 start_event["parameters"],
             "success": process_terminated_count > 0,

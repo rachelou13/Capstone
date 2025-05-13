@@ -1,8 +1,15 @@
+import logging
 import subprocess
 import sys
 from kubernetes import client, config
 
+from python.data_scripts.infra_metrics_scraper import InfraMetricsScraper
+
 title_separator = "="*6
+
+#Set up logging
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def display_menu():
     print("\n" + title_separator + " CHAOS EXPERIMENT LAUNCHER " + title_separator + "\n")
@@ -69,7 +76,7 @@ def select_pod(k8s_client):
                 return selected_pod
             continue
             
-        # Multiple matches - display list for selection
+        #Multiple matches - display list for selection
         print("\nMultiple pods match your input. Please select one:")
         for i, pod in enumerate(matching_pods, 1):
             print(f"{i}. {pod['namespace']}/{pod['name']} ({pod['status']})")
@@ -95,28 +102,40 @@ def select_pod(k8s_client):
         except ValueError:
             print("Please enter a valid number.")
 
+def update_experiment_flag(flag_value):
+    try:
+        #Get the running scraper instance
+        scraper = InfraMetricsScraper.get_instance()
+        
+        if scraper:
+            scraper.set_experiment_detected(flag_value)
+            logger.debug(f"Updated experiment detection flag to: {flag_value}")
+            return True
+        else:
+            print("No running metrics scraper found. Start apply_all.py first.")
+            return False
+            
+    except Exception as e:
+        print(f"Error updating experiment detection flag: {e}")
+        return False
+
 def run_resource_exhaustion(pod_info):
     print("\n" + title_separator + " RESOURCE EXHAUSTION EXPERIMENT " + title_separator  + "\n")
     print("Parameters (press Enter to use default):")
     
-    # Get CPU cores
+    #Get CPU cores
     cores = input("Number of CPU cores to stress [default: 2]: ").strip()
     cores = cores if cores else "2"
     
-    # Get duration
-    duration = input("Duration in seconds [default: 15]: ").strip()
-    duration = duration if duration else "15"
-    
-    # Get scrape interval
-    scrape_interval = input("Metrics scrape interval in seconds [default: 5]: ").strip()
-    scrape_interval = scrape_interval if scrape_interval else "5"
+    #Get duration
+    duration = input("Duration in seconds [default: 30]: ").strip()
+    duration = duration if duration else "30"
     
     print("\nRunning Resource Exhaustion experiment with the following parameters:")
     print(f"Pod: {pod_info['namespace']}/{pod_info['name']}")
     print(f"UID: {pod_info['uid']}")
     print(f"CPU Cores: {cores}")
     print(f"Duration: {duration} seconds")
-    print(f"Scrape Interval: {scrape_interval} seconds")
     
     confirm = input("\nExecute experiment? (y/n): ").strip().lower()
     if confirm != 'y':
@@ -126,18 +145,20 @@ def run_resource_exhaustion(pod_info):
         sys.executable, "-m", "python.chaos_experiments.resource_exhaust",
         "-u", pod_info['uid'],
         "-c", cores,
-        "-d", duration,
-        "-i", scrape_interval
+        "-d", duration
     ]
     
     try:
         print("\nExecuting experiment...")
+        update_experiment_flag(True)
         subprocess.run(cmd, check=True)
         print("\nExperiment completed successfully!")
     except subprocess.CalledProcessError as e:
         print(f"\nError running experiment: {e}")
     except Exception as e:
         print(f"\nUnexpected error: {e}")
+    finally:
+        update_experiment_flag(False)
     
     input("\nPress Enter to continue...")
 
@@ -145,10 +166,10 @@ def run_process_termination(pod_info):
     print("\n" + title_separator + " PROCESS TERMINATION EXPERIMENT " + title_separator)
     print("Parameters (press Enter to skip):")
     
-    # Get container ID prefix (optional)
+    #Get container ID prefix (optional)
     container_id = input("Container ID prefix (optional): ").strip()
     
-    # Get process pattern (optional)
+    #Get process pattern (optional)
     process_pattern = input("Process pattern to match (optional): ").strip()
     
     print("\nRunning Process Termination experiment with the following parameters:")
@@ -173,17 +194,20 @@ def run_process_termination(pod_info):
     
     try:
         print("\nExecuting experiment...")
+        update_experiment_flag(True)
         subprocess.run(cmd, check=True)
         print("\nExperiment completed successfully!")
     except subprocess.CalledProcessError as e:
         print(f"\nError running experiment: {e}")
     except Exception as e:
         print(f"\nUnexpected error: {e}")
+    finally:
+        update_experiment_flag(False)
     
     input("\nPress Enter to continue...")
 
 def main():
-    # K8s client setup
+    #K8s client setup
     k8s_client = get_k8s_client()
     if not k8s_client:
         print("Failed to initialize Kubernetes client. Exiting.")
@@ -203,12 +227,12 @@ def main():
             input("Press Enter to continue...")
             continue
         
-        # Select target pod
+        #Select target pod
         pod_info = select_pod(k8s_client)
         if not pod_info:
             continue
         
-        # Run experiment
+        #Run experiment
         if choice == "1":
             run_process_termination(pod_info)
         elif choice == "2":
