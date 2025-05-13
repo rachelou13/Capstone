@@ -18,14 +18,30 @@ class CapstoneKafkaProducer:
         self.producer = None
         self.connected = False
         self._connect()
-    
+
+    @staticmethod
+    def safe_serialize_key(key):
+        try:
+            return str(key).encode('utf-8') if key else None
+        except Exception as e:
+            logger.warning(f"Failed to serialize key: {e}")
+            return None
+
+    @staticmethod
+    def safe_serialize_value(value):
+        try:
+            return json.dumps(value).encode('utf-8') if value else None
+        except Exception as e:
+            logger.warning(f"Failed to serialize value: {e}")
+            return {}
+        
     def _connect(self):
         #Try to connect to Kafka producer
         try:
             self.producer = KafkaProducer (
                bootstrap_servers = self.brokers,
-               key_serializer=lambda k: str(k).encode('utf-8'),
-               value_serializer = lambda v: json.dumps(v).encode('utf-8'),
+               key_serializer=self.safe_serialize_key,
+               value_serializer = self.safe_serialize_value,
                client_id = 'kafka-python-producer'
             )
             self.connected = True

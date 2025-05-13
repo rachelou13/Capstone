@@ -99,33 +99,65 @@ def main():
 
             try:
                 ts = value.get("timestamp")
-                source = value.get("experiment_type", "infra_metrics_scraper")
+                source = value.get("source", "infra_metrics_scraper")
+                experiment_detected = value.get("experiment_detected", False)
                 metrics = value.get("metrics", {})
                 node_metrics = metrics.get("node", {})
-
-                cpu_percent = node_metrics.get("cpu_usage", {}).get("percent", 0.0)
-                cpu_used = node_metrics.get("cpu_usage", {}).get("used", 0.0)
-                mem_percent = node_metrics.get("memory_usage", {}).get("percent", 0.0)
-                mem_used = node_metrics.get("memory_usage", {}).get("used", 0.0)
+                container_metrics = metrics.get("containers", {})
 
                 params = value.get("parameters", {})
                 node_name = params.get("node")
                 pod_name = params.get("pod_name")
                 pod_namespace = params.get("pod_namespace")
 
-                query = """
+                #Process node metrics
+                node_cpu_percent = node_metrics.get("cpu_usage", {}).get("percent", 0.0)
+                node_cpu_used = node_metrics.get("cpu_usage", {}).get("used", 0.0)
+                node_mem_percent = node_metrics.get("memory_usage", {}).get("percent", 0.0)
+                node_mem_used = node_metrics.get("memory_usage", {}).get("used", 0.0)
+
+                #Insert node-level metrics
+                node_query = """
                 INSERT INTO infra_metrics (
-                    timestamp, source, cpu_percent, cpu_used, mem_percent, mem_used,
-                    node_name, pod_name, pod_namespace
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    timestamp, source, experiment_detected,
+                    cpu_percent, cpu_used, mem_percent, mem_used,
+                    node_name, pod_name, pod_namespace, container_name, metric_level
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
-                mysql_cursor.execute(query, (
-                    ts, source, cpu_percent, cpu_used,
-                    mem_percent, mem_used,
-                    node_name, pod_name, pod_namespace
+                #Use NULL for container_name and 'node' for metric_level to indicate node-level metrics
+                mysql_cursor.execute(node_query, (
+                    ts, source, experiment_detected,
+                    node_cpu_percent, node_cpu_used, node_mem_percent, node_mem_used,
+                    node_name, pod_name, pod_namespace, None, 'node'
                 ))
+                
+                #Process container metrics if they exist
+                if container_metrics:
+                    container_query = """
+                    INSERT INTO infra_metrics (
+                        timestamp, source, experiment_detected,
+                        cpu_percent, cpu_used, mem_percent, mem_used,
+                        node_name, pod_name, pod_namespace, container_name, metric_level
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+                    
+                    for container_name, container_data in container_metrics.items():
+                        #Extract container CPU and memory metrics
+                        container_cpu_percent = container_data.get("cpu_usage", {}).get("percent")
+                        container_cpu_used = container_data.get("cpu_usage", {}).get("used")
+                        container_mem_percent = container_data.get("memory_usage", {}).get("percent")
+                        container_mem_used = container_data.get("memory_usage", {}).get("used")
+                        
+                        mysql_cursor.execute(container_query, (
+                            ts, source, experiment_detected,
+                            container_cpu_percent, container_cpu_used, 
+                            container_mem_percent, container_mem_used,
+                            node_name, pod_name, pod_namespace, container_name, 'container'
+                        ))
+                
                 mysql_conn.commit()
-                logger.info(f"Inserted metric: {metric}, value: {val}, source: {source}")
+                container_count = len(container_metrics) if container_metrics else 0
+                logger.info(f"Inserted node metrics and {container_count} container metrics for pod {pod_name}")
             except Exception as e:
                 logger.error(f"Failed to insert into MySQL: {e}")
 

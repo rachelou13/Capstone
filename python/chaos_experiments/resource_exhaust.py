@@ -2,16 +2,13 @@ import logging
 import argparse
 import uuid
 from datetime import datetime, timezone
-import threading
 
 from kubernetes import client, config
 from kubernetes.stream import stream
 
 from python.utils.kafka_producer import CapstoneKafkaProducer
-from python.data_scripts.infra_metrics_scraper import InfraMetricsScraper
 
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def exec_command_in_pod(api, pod_name, namespace, container_name, duration, command_list):
@@ -47,7 +44,7 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
         command_string = (
             'echo "Script started at $(date)" > /tmp/cpu_stress_internal.log; '
             f"rm -f {background_pids_file}; "
-            # Cleanup function
+            #Cleanup function
             "cleanup() { "
             f"  echo 'Cleaning up stress processes' >> /tmp/cpu_stress_internal.log; "
             f"  if [ -f {background_pids_file} ]; then "
@@ -80,7 +77,7 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
         if exit_code == 0:
             logger.info(f"CPU stress command completed in {namespace}/{pod_name}/{container_name}. Verifying cleanup...")
             
-            # Check if PID file still exists
+            #Check if PID file still exists
             verify_command = [
                 '/bin/sh', 
                 '-c', 
@@ -93,7 +90,7 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
                 cpu_stress_test_success = True
             else:
                 logger.warning(f"Cleanup may not be complete in {container_name}: {verify_stdout}")
-                # Try one more cleanup
+                #Try one more cleanup
                 final_cleanup = [
                     '/bin/sh',
                     '-c',
@@ -103,7 +100,7 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
                 cpu_stress_test_success = True
         else:
             logger.error(f"CPU stress command failed in {namespace}/{pod_name}/{container_name}. Exit code: {exit_code}, Stderr: {stderr}")
-            # Try emergency cleanup
+            #Try emergency cleanup
             emergency_cleanup = [
                 '/bin/sh',
                 '-c',
@@ -133,7 +130,7 @@ def main():
         "--duration",
         type=int,
         required=False,
-        default=15,
+        default=30,
         metavar="SECONDS",
         help="Duration you want the CPU stress test to run for (in seconds)"
     )
@@ -145,15 +142,6 @@ def main():
         default=2,
         metavar="CORES",
         help="Number of CPU stress processes to start in the target container (e.g., corresponding to virtual cores available to the pod/container)."
-    )
-    parser.add_argument(
-        "-i",
-        "--scrape-interval",
-        required=False,
-        default=5,
-        type=int,
-        metavar="SCRAPE_INTERVAL",
-        help="How often (in seconds) to scrape metrics"
     )
     parser.add_argument(
         "-k",
@@ -168,17 +156,12 @@ def main():
     pod_uid = args.pod_uid
     num_cores = args.cores
     duration = args.duration
-    scrape_interval = args.scrape_interval
     kube_config = args.kube_config
 
     #Start kafka producer
     kafka_prod = CapstoneKafkaProducer()
     experiment_id = str(uuid.uuid4())
     start_time = datetime.now(timezone.utc)
-
-    #Initialize scraper variables
-    infra_scraper = None
-    scraper_thread = None
 
     #Initialize success tracker
     cpu_stress_test_success = False
@@ -198,7 +181,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "resource_exhaustion", 
+                "source": "resource_exhaustion", 
                 "error": f"K8s client init failed: {e}"
              }
 
@@ -240,7 +223,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "resource_exhaustion",
+                "source": "resource_exhaustion",
                 "parameters": {
                     "pod_uid": pod_uid
                 },
@@ -250,23 +233,12 @@ def main():
             kafka_prod.send_event(pod_fail_event, experiment_id)
         return
 
-    #Start scraper for infra metrics
-    try:
-        infra_scraper = InfraMetricsScraper(experiment_id=experiment_id, target_pod_info=target_pod_info, kube_config=kube_config, scrape_interval=scrape_interval)
-        scraper_thread = threading.Thread(target=infra_scraper.start, daemon=True)
-        scraper_thread.start()
-        logger.info(f"InfraMetricsScraper initialized for pod UID {pod_uid}")
-    except Exception as e:
-        logger.error(f"Failed to initialize or start InfraMetricsScraper: {e}")
-        infra_scraper = None
-        scraper_thread = None
-
     #Send start event to kafka
     start_event = {
         "timestamp": start_time.isoformat(),
         "experiment_id": experiment_id,
         "event_type": "start",
-        "experiment_type": "resource_exhaustion",
+        "source": "resource_exhaustion",
         "parameters": {
             "node": target_pod_info.get('node'),
             "pod_uid": pod_uid,
@@ -292,7 +264,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "experiment_type": "resource_exhaust",
+                "source": "resource_exhaust",
                 "parameters":
                     start_event["parameters"],
                 "error": f"Process termination failed: {e}"
@@ -301,22 +273,13 @@ def main():
 
     #Ensure end event is always sent, kafka producer is always closed
     finally:
-        #Close the scraper for infra metrics
-        if infra_scraper:
-            infra_scraper.close()
-            if scraper_thread and scraper_thread.is_alive():
-                logger.info("Waiting for scraper thread to finish...")
-                scraper_thread.join(timeout=10) 
-                if scraper_thread.is_alive():
-                    logger.warning("Scraper thread did not finish in time")
-
         #Send end event to kafka
         end_time = datetime.now(timezone.utc)
         end_event = {
             "timestamp": end_time.isoformat(),
             "experiment_id": experiment_id,
             "event_type": "end",
-            "experiment_type": "resource_exhaustion",
+            "source": "resource_exhaustion",
             "parameters":
                     start_event["parameters"],
             "success": cpu_stress_test_success,
