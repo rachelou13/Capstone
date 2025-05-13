@@ -2,12 +2,12 @@ import logging
 import json
 import socket
 import time
-import pymysql
+import mysql.connector
 from pymongo import MongoClient
 from kafka.consumer import KafkaConsumer
 from kafka.errors import KafkaError, NoBrokersAvailable
 
-#Configure logging
+# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -42,11 +42,10 @@ def safe_deserialize_value(value):
 
 def main():
     KAFKA_BROKERS = ["kafka-0.kafka-headless.default.svc.cluster.local:9094"]
-
     TOPICS = ["proxy-logs", "infra-metrics", "chaos-events"]
 
     # MySQL connection
-    mysql_conn = pymysql.connect(
+    mysql_conn = mysql.connector.connect(
         host="mysql-summary-records",
         user="root",
         password="root",
@@ -74,14 +73,10 @@ def main():
         value_deserializer=safe_deserialize_value,
         api_version=(3, 6)
     )
-    
-    # Need to make the tables for the info if they are not created already so we can store the log in the databases
 
     logger.info("Kafka consumer is running")
-
     consumer.subscribe(TOPICS)
-
-    logger.info("Listeninig to" + ", ".join(TOPICS))
+    logger.info("Listening to " + ", ".join(TOPICS))
 
     for message in consumer:
         topic = message.topic
@@ -91,12 +86,9 @@ def main():
         logger.debug(f"Message content: {value}")
 
         if topic == 'proxy-logs':
-            # send to mysql in a nice way
             print(f"Sending message from {topic} to MYSQL")
         elif topic == 'infra-metrics':
-            # send to mysql here
             print(f"Sending message from {topic} to MYSQL")
-
             try:
                 ts = value.get("timestamp")
                 source = value.get("source", "infra_metrics_scraper")
@@ -104,19 +96,11 @@ def main():
                 metrics = value.get("metrics", {})
                 node_metrics = metrics.get("node", {})
                 container_metrics = metrics.get("containers", {})
-
                 params = value.get("parameters", {})
                 node_name = params.get("node")
                 pod_name = params.get("pod_name")
                 pod_namespace = params.get("pod_namespace")
 
-                #Process node metrics
-                node_cpu_percent = node_metrics.get("cpu_usage", {}).get("percent", 0.0)
-                node_cpu_used = node_metrics.get("cpu_usage", {}).get("used", 0.0)
-                node_mem_percent = node_metrics.get("memory_usage", {}).get("percent", 0.0)
-                node_mem_used = node_metrics.get("memory_usage", {}).get("used", 0.0)
-
-                #Insert node-level metrics
                 node_query = """
                 INSERT INTO infra_metrics (
                     timestamp, source, experiment_detected,
@@ -124,14 +108,15 @@ def main():
                     node_name, pod_name, pod_namespace, container_name, metric_level
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
-                #Use NULL for container_name and 'node' for metric_level to indicate node-level metrics
                 mysql_cursor.execute(node_query, (
                     ts, source, experiment_detected,
-                    node_cpu_percent, node_cpu_used, node_mem_percent, node_mem_used,
+                    node_metrics.get("cpu_usage", {}).get("percent", 0.0),
+                    node_metrics.get("cpu_usage", {}).get("used", 0.0),
+                    node_metrics.get("memory_usage", {}).get("percent", 0.0),
+                    node_metrics.get("memory_usage", {}).get("used", 0.0),
                     node_name, pod_name, pod_namespace, None, 'node'
                 ))
-                
-                #Process container metrics if they exist
+
                 if container_metrics:
                     container_query = """
                     INSERT INTO infra_metrics (
@@ -140,39 +125,30 @@ def main():
                         node_name, pod_name, pod_namespace, container_name, metric_level
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """
-                    
-                    for container_name, container_data in container_metrics.items():
-                        #Extract container CPU and memory metrics
-                        container_cpu_percent = container_data.get("cpu_usage", {}).get("percent")
-                        container_cpu_used = container_data.get("cpu_usage", {}).get("used")
-                        container_mem_percent = container_data.get("memory_usage", {}).get("percent")
-                        container_mem_used = container_data.get("memory_usage", {}).get("used")
-                        
+                    for cname, cdata in container_metrics.items():
                         mysql_cursor.execute(container_query, (
                             ts, source, experiment_detected,
-                            container_cpu_percent, container_cpu_used, 
-                            container_mem_percent, container_mem_used,
-                            node_name, pod_name, pod_namespace, container_name, 'container'
+                            cdata.get("cpu_usage", {}).get("percent"),
+                            cdata.get("cpu_usage", {}).get("used"),
+                            cdata.get("memory_usage", {}).get("percent"),
+                            cdata.get("memory_usage", {}).get("used"),
+                            node_name, pod_name, pod_namespace, cname, 'container'
                         ))
-                
+
                 mysql_conn.commit()
-                container_count = len(container_metrics) if container_metrics else 0
-                logger.info(f"Inserted node metrics and {container_count} container metrics for pod {pod_name}")
+                logger.info(f"Inserted node and {len(container_metrics)} container metrics for pod {pod_name}")
             except Exception as e:
                 logger.error(f"Failed to insert into MySQL: {e}")
 
         elif topic == 'chaos-events':
-            # send to mongodb here
             print(f"sending message from {topic} to MongoDB")
-            
             try:
                 chaos_collection.insert_one(value)
                 logger.info("Inserted chaos event: %s from %s", value.get("event_type"), value.get("source"))
             except Exception as e:
                 logger.error(f"Failed to insert into MongoDB: {e}")
-
         else:
             print(f"[UNKNOWN TOPIC] {topic}: {value}")
 
 if __name__ == '__main__':
-  main()
+    main()
