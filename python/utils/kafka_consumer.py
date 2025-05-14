@@ -90,6 +90,7 @@ def main():
         mongo_client = connect_mongodb_with_retry("mongodb-service", "root", "root")
         mongo_db = mongo_client["metrics_db"]
         chaos_collection = mongo_db["chaos_events"]
+        proxy_logs_collection = mongo_db["proxy_logs"]
     except Exception as e:
         logger.error(f"Fatal error: Failed to connect to MongoDB: {e}")
         mongo_client = None
@@ -124,7 +125,25 @@ def main():
         logger.debug(f"Message content: {value}")
 
         if topic == 'proxy-logs':
-            print(f"Sending message from {topic} to MYSQL")
+            print(f"Sending message from {topic} to MongoDB")
+            try:
+                log_entry = {
+                    "timestamp": value.get("timestamp"),
+                    "level": value.get("level"),
+                    "event": value.get("event"),
+                    "message": value.get("message"),
+                    "direction": value.get("direction"),
+                    "client_ip": value.get("client_ip"),
+                    "db_target": value.get("db_target"),
+                    "source": value.get("source"),
+                }
+                # This gets rid of the values that could be null so we dont insert them into mongodb
+                log_entry = {k: v for k, v in log_entry.items() if v is not None}
+
+                proxy_logs_collection.insert_one(log_entry)
+            except Exception as e:
+                logger.error(f"Failed to insert into MongoDB: {e}")
+
         elif topic == 'infra-metrics':
             print(f"Sending message from {topic} to MYSQL")
             try:
