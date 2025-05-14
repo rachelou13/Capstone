@@ -3,7 +3,7 @@ import subprocess
 import sys
 
 from kubernetes import client, config
-from python.data_scripts.infra_metrics_scraper import InfraMetricsScraper
+from python.data_scripts.metrics_scraper import KafkaMetricsProducer
 
 title_separator = "="*6
 

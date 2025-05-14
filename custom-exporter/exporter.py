@@ -15,7 +15,8 @@ def metrics():
             host=os.getenv("MYSQL_HOST", "mysql-summary-records"),
             user=os.getenv("MYSQL_USER", "root"),
             password=os.getenv("MYSQL_PASSWORD", "root"),
-            database=os.getenv("MYSQL_DB", "summary_db")
+            database=os.getenv("MYSQL_DB", "summary_db"),
+            connection_timeout=3
         )
         cursor = mysql_conn.cursor(dictionary=True)
 
@@ -23,21 +24,30 @@ def metrics():
         cursor.execute("SELECT AVG(cpu_percent) AS avg_cpu, AVG(mem_percent) AS avg_mem, COUNT(*) as total FROM infra_metrics")
         row = cursor.fetchone()
         if row:
-            lines.append(f'infra_avg_cpu_percent {row["avg_cpu"]:.2f}')
-            lines.append(f'infra_avg_mem_percent {row["avg_mem"]:.2f}')
-            lines.append(f'infra_metric_total_scrapes {row["total"]}')
-        
+            lines.append(f'infra_avg_cpu_percent {row["avg_cpu"] or 0:.2f}')
+            lines.append(f'infra_avg_mem_percent {row["avg_mem"] or 0:.2f}')
+            lines.append(f'infra_metric_total_scrapes {row["total"] or 0}')
+
         # Raw metrics
-        cursor.execute("SELECT * FROM infra_metrics ORDER BY timestamp DESC LIMIT 1")
+        cursor.execute("SELECT * FROM infra_metrics WHERE metric_level = 'node' ORDER BY timestamp DESC LIMIT 1")
         for row in cursor.fetchall():
             pod = row.get("pod_name", "unknown")
             node = row.get("node_name", "unknown")
             namespace = row.get("pod_namespace", "default")
 
-            lines.append(f'infra_cpu_usage_percent{{pod="{pod}", node="{node}", namespace="{namespace}"}} {row["cpu_percent"]}')
-            lines.append(f'infra_cpu_usage_absolute{{pod="{pod}", node="{node}", namespace="{namespace}"}} {row["cpu_used"]}')
-            lines.append(f'infra_mem_usage_percent{{pod="{pod}", node="{node}", namespace="{namespace}"}} {row["mem_percent"]}')
-            lines.append(f'infra_mem_usage_absolute{{pod="{pod}", node="{node}", namespace="{namespace}"}} {row["mem_used"]}')
+            cpu_percent = row.get("cpu_percent")
+            cpu_used = row.get("cpu_used")
+            mem_percent = row.get("mem_percent")
+            mem_used = row.get("mem_used")
+
+            if cpu_percent is not None:
+                lines.append(f'infra_cpu_usage_percent{{pod="{pod}", node="{node}", namespace="{namespace}"}} {cpu_percent}')
+            if cpu_used is not None:
+                lines.append(f'infra_cpu_usage_absolute{{pod="{pod}", node="{node}", namespace="{namespace}"}} {cpu_used}')
+            if mem_percent is not None:
+                lines.append(f'infra_mem_usage_percent{{pod="{pod}", node="{node}", namespace="{namespace}"}} {mem_percent}')
+            if mem_used is not None:
+                lines.append(f'infra_mem_usage_absolute{{pod="{pod}", node="{node}", namespace="{namespace}"}} {mem_used}')
 
         cursor.close()
         mysql_conn.close()
@@ -46,12 +56,12 @@ def metrics():
 
     # === MongoDB: chaos_events ===
     try:
-        mongo_client = MongoClient("mongodb://root:root@mongodb:27017/")
+        mongo_client = MongoClient("mongodb://root:root@mongodb-service:27017/", serverSelectionTimeoutMS=3000)
         db = mongo_client["metrics_db"]
         collection = db["chaos_events"]
 
         # Count total chaos events
-        total_chaos = collection.count_documents({})
+        total_chaos = collection.count_documents({}, maxTimeMS=2000)
         lines.append(f'chaos_events_total {total_chaos}')
     except Exception as e:
         lines.append(f'# MongoDB error: {str(e)}')
