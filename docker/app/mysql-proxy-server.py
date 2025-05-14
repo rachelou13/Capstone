@@ -16,11 +16,7 @@ PRIMARY_HOST = "mysql-primary"
 REPLICA_HOST = "mysql-replica"
 
 # Info for our Kafka producer
-KAFKA_BROKER = [
-    "kafka-0.kafka-headless.default.svc.cluster.local:9094",
-    "kafka-1.kafka-headless.default.svc.cluster.local:9094",
-    "kafka-2.kafka-headless.default.svc.cluster.local:9094"
-]
+KAFKA_BROKER = ["kafka-0.kafka-headless.default.svc.cluster.local:9094"]
 
 KAFKA_TOPIC = "proxy-logs"
 
