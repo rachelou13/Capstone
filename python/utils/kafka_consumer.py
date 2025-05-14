@@ -96,6 +96,7 @@ def main():
         mongo_client = None
         mongo_db = None
         chaos_collection = None
+        proxy_logs_collection = None
 
     try:
         wait_for_kafka(KAFKA_BROKERS)
@@ -125,27 +126,36 @@ def main():
         logger.debug(f"Message content: {value}")
 
         if topic == 'proxy-logs':
-            print(f"Sending message from {topic} to MongoDB")
-            try:
-                log_entry = {
-                    "timestamp": value.get("timestamp"),
-                    "level": value.get("level"),
-                    "event": value.get("event"),
-                    "message": value.get("message"),
-                    "direction": value.get("direction"),
-                    "client_ip": value.get("client_ip"),
-                    "db_target": value.get("db_target"),
-                    "source": value.get("source"),
-                }
-                # This gets rid of the values that could be null so we dont insert them into mongodb
-                log_entry = {k: v for k, v in log_entry.items() if v is not None}
+            logger.info(f"Sending message from {topic} to MongoDB")
+            if proxy_logs_collection is not None:
+                try:
+                    log_entry = {
+                        "timestamp": value.get("timestamp"),
+                        "level": value.get("level"),
+                        "event": value.get("event"),
+                        "message": value.get("message"),
+                        "direction": value.get("direction"),
+                        "client_ip": value.get("client_ip"),
+                        "db_target": value.get("db_target"),
+                        "source": value.get("source"),
+                    }
+                    # This gets rid of the values that could be null so we dont insert them into mongodb
+                    log_entry = {k: v for k, v in log_entry.items() if v is not None}
 
-                proxy_logs_collection.insert_one(log_entry)
-            except Exception as e:
-                logger.error(f"Failed to insert into MongoDB: {e}")
+                    proxy_logs_collection.insert_one(log_entry)
+                except Exception as e:
+                    logger.error(f"Failed to insert into MongoDB: {e}")
+                    try:
+                        mongo_client = connect_mongodb_with_retry("mongodb-service", "root", "root")
+                        mongo_db = mongo_client["metrics_db"]
+                        proxy_logs_collection = mongo_db["proxy_logs"]
+                    except Exception as reconnect_error:
+                        logger.error(f"Failed to reconnect to MongoDB: {reconnect_error}")
+            else:
+                logger.error("MongoDB connection not available, skipping proxy log")
 
         elif topic == 'infra-metrics':
-            print(f"Sending message from {topic} to MYSQL")
+            logger.info(f"Sending message from {topic} to MYSQL")
             try:
                 ts = value.get("timestamp")
                 source = value.get("source", "infra_metrics_scraper")
@@ -198,7 +208,7 @@ def main():
                 logger.error(f"Failed to insert into MySQL: {e}")
 
         elif topic == 'chaos-events':
-            print(f"sending message from {topic} to MongoDB")
+            logger.info(f"sending message from {topic} to MongoDB")
             if chaos_collection is not None:
                 try:
                     chaos_collection.insert_one(value)
