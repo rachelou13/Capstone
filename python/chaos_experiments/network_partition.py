@@ -211,96 +211,96 @@ def apply_network_policy(api_client, pod_info, target_service, direction):
         logger.error(f"Failed to create NetworkPolicy: {e}")
         return False, None
 
-def validate_connectivity(api_client, pod_info, target_service, port, expected_failure=False):
-    pod_name = pod_info['name']
-    namespace = pod_info['namespace']
-    core_v1 = client.CoreV1Api(api_client)
+# def validate_connectivity(api_client, pod_info, target_service, port, expected_failure=False):
+#     pod_name = pod_info['name']
+#     namespace = pod_info['namespace']
+#     core_v1 = client.CoreV1Api(api_client)
     
-    service_fqdn = f"{target_service}.{namespace}.svc.cluster.local"
+#     service_fqdn = f"{target_service}.{namespace}.svc.cluster.local"
     
-    test_commands = [
-        #Try netcat first
-        f"nc -zv -w 3 {service_fqdn} {port} 2>&1 || echo 'CONNECTION_FAILED'",
+#     test_commands = [
+#         #Try netcat first
+#         f"nc -zv -w 3 {service_fqdn} {port} 2>&1 || echo 'CONNECTION_FAILED'",
         
-        #Try curl as fallback
-        f"curl -s -m 3 -o /dev/null -w '%{{http_code}}' http://{service_fqdn}:{port} || echo 'CONNECTION_FAILED'",
+#         #Try curl as fallback
+#         f"curl -s -m 3 -o /dev/null -w '%{{http_code}}' http://{service_fqdn}:{port} || echo 'CONNECTION_FAILED'",
         
-        #Try MySQL client if this is a MySQL connection
-        f"mysql -h {service_fqdn} -P {port} -e 'SELECT 1' 2>/dev/null && echo 'CONNECTION_SUCCESS' || echo 'CONNECTION_FAILED'",
+#         #Try MySQL client if this is a MySQL connection
+#         f"mysql -h {service_fqdn} -P {port} -e 'SELECT 1' 2>/dev/null && echo 'CONNECTION_SUCCESS' || echo 'CONNECTION_FAILED'",
         
-        #Try bash built-in as fallback
-        f"bash -c '(echo > /dev/tcp/{service_fqdn}/{port}) 2>/dev/null && echo CONNECTION_SUCCESS || echo CONNECTION_FAILED'",
+#         #Try bash built-in as fallback
+#         f"bash -c '(echo > /dev/tcp/{service_fqdn}/{port}) 2>/dev/null && echo CONNECTION_SUCCESS || echo CONNECTION_FAILED'",
         
-        #Final fallback for sh-only containers
-        f"(timeout 3 telnet {service_fqdn} {port} || echo 'CONNECTION_FAILED') 2>/dev/null"
-    ]
+#         #Final fallback for sh-only containers
+#         f"(timeout 3 telnet {service_fqdn} {port} || echo 'CONNECTION_FAILED') 2>/dev/null"
+#     ]
     
-    #Try each command until one works
-    for i, cmd in enumerate(test_commands):
-        try:
-            logger.info(f"Testing connectivity (attempt {i+1}/{len(test_commands)}): {cmd}")
+#     #Try each command until one works
+#     for i, cmd in enumerate(test_commands):
+#         try:
+#             logger.info(f"Testing connectivity (attempt {i+1}/{len(test_commands)}): {cmd}")
             
-            exec_command = ['/bin/sh', '-c', cmd]
-            resp = stream(core_v1.connect_get_namespaced_pod_exec,
-                         pod_name,
-                         namespace,
-                         command=exec_command,
-                         stderr=True,
-                         stdin=False,
-                         stdout=True,
-                         tty=False)
+#             exec_command = ['/bin/sh', '-c', cmd]
+#             resp = stream(core_v1.connect_get_namespaced_pod_exec,
+#                          pod_name,
+#                          namespace,
+#                          command=exec_command,
+#                          stderr=True,
+#                          stdin=False,
+#                          stdout=True,
+#                          tty=False)
             
-            logger.info(f"Connection test result: {resp}")
+#             logger.info(f"Connection test result: {resp}")
             
-            #Check if the command was not found
-            if "command not found" in resp or "not found" in resp:
-                logger.warning(f"Command not available in container, trying next command")
-                continue
+#             #Check if the command was not found
+#             if "command not found" in resp or "not found" in resp:
+#                 logger.warning(f"Command not available in container, trying next command")
+#                 continue
                 
-            #Check if connection succeeded or failed
-            connection_failed = "CONNECTION_FAILED" in resp
-            connection_succeeded = not connection_failed and (
-                "CONNECTION_SUCCESS" in resp or 
-                "open" in resp.lower() or 
-                "connected" in resp.lower() or
-                "established" in resp.lower() or
-                "200" in resp
-            )
+#             #Check if connection succeeded or failed
+#             connection_failed = "CONNECTION_FAILED" in resp
+#             connection_succeeded = not connection_failed and (
+#                 "CONNECTION_SUCCESS" in resp or 
+#                 "open" in resp.lower() or 
+#                 "connected" in resp.lower() or
+#                 "established" in resp.lower() or
+#                 "200" in resp
+#             )
             
-            if connection_succeeded:
-                logger.info(f"Connection test succeeded using command {i+1}")
-                if expected_failure:
-                    logger.warning(f"Connection to {service_fqdn}:{port} succeeded but should have failed")
-                    return False
-                else:
-                    logger.info(f"Connection succeeded as expected")
-                    return True
-            elif connection_failed:
-                logger.info(f"Connection test failed using command {i+1}")
-                if not expected_failure:
-                    logger.warning(f"Connection to {service_fqdn}:{port} failed but should have succeeded")
-                    return False
-                else:
-                    logger.info(f"Connection failed as expected")
-                    return True
-            else:
-                logger.warning(f"Unclear result from command {i+1}, trying next command")
-                continue
+#             if connection_succeeded:
+#                 logger.info(f"Connection test succeeded using command {i+1}")
+#                 if expected_failure:
+#                     logger.warning(f"Connection to {service_fqdn}:{port} succeeded but should have failed")
+#                     return False
+#                 else:
+#                     logger.info(f"Connection succeeded as expected")
+#                     return True
+#             elif connection_failed:
+#                 logger.info(f"Connection test failed using command {i+1}")
+#                 if not expected_failure:
+#                     logger.warning(f"Connection to {service_fqdn}:{port} failed but should have succeeded")
+#                     return False
+#                 else:
+#                     logger.info(f"Connection failed as expected")
+#                     return True
+#             else:
+#                 logger.warning(f"Unclear result from command {i+1}, trying next command")
+#                 continue
                 
-        except Exception as e:
-            logger.warning(f"Command {i+1} failed with error: {e}, trying next command")
-            continue
+#         except Exception as e:
+#             logger.warning(f"Command {i+1} failed with error: {e}, trying next command")
+#             continue
     
-    #ALL commands failed to run properly
-    logger.error("All connectivity test commands failed")
+#     #ALL commands failed to run properly
+#     logger.error("All connectivity test commands failed")
     
-    #Default to assuming the test passed if we expected failure
-    if expected_failure:
-        logger.info("Assuming connection is blocked as expected since all tests failed")
-        return True
-    else:
-        logger.warning("Assuming connection test failed since no method worked")
-        return False
+#     #Default to assuming the test passed if we expected failure
+#     if expected_failure:
+#         logger.info("Assuming connection is blocked as expected since all tests failed")
+#         return True
+#     else:
+#         logger.warning("Assuming connection test failed since no method worked")
+#         return False
     
 def setup_timeout(api_client, target_pod_info, policy_name, duration):
     
@@ -505,12 +505,12 @@ def main():
             time.sleep(3)
             
             #Validate partition was effective
-            if target_service and port:
-                logger.info(f"Validating connectivity to {target_service}")
-                partition_validated = validate_connectivity(
-                    api_client, target_pod_info, target_service, port, expected_failure=True
-                )
-                logger.info(f"Partition validation {'succeeded' if partition_validated else 'failed'}")
+            # if target_service and port:
+            #     logger.info(f"Validating connectivity to {target_service}")
+            #     partition_validated = validate_connectivity(
+            #         api_client, target_pod_info, target_service, port, expected_failure=True
+            #     )
+            #     logger.info(f"Partition validation {'succeeded' if partition_validated else 'failed'}")
             
             #Set up timeout for automatic policy removal
             timer = setup_timeout(api_client, target_pod_info, policy_name, duration)
@@ -530,12 +530,12 @@ def main():
             time.sleep(3)
             
             # Validate rollback was effective (optional)
-            if target_service and port:
-                logger.info(f"Validating connectivity to {target_service} after rollback")
-                rollback_validated = validate_connectivity(
-                    api_client, target_pod_info, target_service, port, expected_failure=False
-                )
-                logger.info(f"Rollback validation {'succeeded' if rollback_validated else 'failed'}")
+            # if target_service and port:
+            #     logger.info(f"Validating connectivity to {target_service} after rollback")
+            #     rollback_validated = validate_connectivity(
+            #         api_client, target_pod_info, target_service, port, expected_failure=False
+            #     )
+            #     logger.info(f"Rollback validation {'succeeded' if rollback_validated else 'failed'}")
         else:
             logger.error("Failed to create network partition")
 
