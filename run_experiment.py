@@ -106,8 +106,8 @@ def run_network_partition(pod_info):
     print("Parameters (press Enter to use default):")
     
     #Get target host
-    target_host = input("Target host to block [default: mysql-primary]: ").strip()
-    target_host = target_host if target_host else "mysql-primary"
+    target_service = input("Target service to block [default: mysql-primary]: ").strip()
+    target_service = target_service if target_service else "mysql-primary"
     
     #Get port
     port = input("Port to block [default: 3306]: ").strip()
@@ -128,7 +128,7 @@ def run_network_partition(pod_info):
     print("\nRunning Network Partition experiment with the following parameters:")
     print(f"Pod: {pod_info['namespace']}/{pod_info['name']}")
     print(f"UID: {pod_info['uid']}")
-    print(f"Target Host: {target_host}")
+    print(f"Target Service: {target_service}")
     print(f"Port: {port}")
     print(f"Protocol: {protocol}")
     print(f"Direction: {direction}")
@@ -141,7 +141,7 @@ def run_network_partition(pod_info):
     cmd = [
         sys.executable, "-m", "python.chaos_experiments.network_partition",
         "-u", pod_info['uid'],
-        "-t", target_host,
+        "-ts", target_service,
         "-p", port,
         "-pr", protocol,
         "-dir", direction,

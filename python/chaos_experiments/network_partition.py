@@ -16,7 +16,7 @@ from python.utils.kafka_producer import CapstoneKafkaProducer
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
     
-def apply_network_policy(api_client, pod_info, target_host, direction):
+def apply_network_policy(api_client, pod_info, target_service, direction):
     pod_name = pod_info['name']
     namespace = pod_info['namespace']
     policy_name = f"chaos-network-partition-{uuid.uuid4().hex[:8]}"
@@ -28,6 +28,46 @@ def apply_network_policy(api_client, pod_info, target_host, direction):
     
     if not pod_labels:
         logger.error(f"Pod {namespace}/{pod_name} has no labels. Cannot create NetworkPolicy.")
+        return False, None
+    
+    #Try to find the target service to get its selectors
+    try:
+        #First try in the same namespace
+        service = None
+        try:
+            service = core_v1.read_namespaced_service(
+                name=target_service, 
+                namespace=namespace
+            )
+            logger.info(f"Found service {target_service} in namespace {namespace}")
+        except client.rest.ApiException as e:
+            if e.status == 404:
+                #If not found in pod's namespace, try in default namespace
+                try:
+                    service = core_v1.read_namespaced_service(
+                        name=target_service, 
+                        namespace="default"
+                    )
+                    logger.info(f"Found service {target_service} in namespace default")
+                except client.rest.ApiException:
+                    logger.error(f"Service {target_service} not found in either {namespace} or default namespace")
+                    return False, None
+            else:
+                logger.error(f"Error reading service {target_service}: {e}")
+                return False, None
+        
+        #Get service selector labels
+        service_selector = service.spec.selector
+        
+        if not service_selector:
+            logger.error(f"Service {target_service} doesn't have selector labels")
+            return False, None
+            
+        logger.info(f"Service {target_service} has selector labels: {service_selector}")
+        service_namespace = service.metadata.namespace
+        
+    except Exception as e:
+        logger.error(f"Failed to find service info for {target_service}: {e}")
         return False, None
     
     #Create NetworkPolicy based on direction
@@ -46,36 +86,51 @@ def apply_network_policy(api_client, pod_info, target_host, direction):
         }
     }
     
-    #Handle outbound traffic
+    # Handle outbound traffic (pod to service)
     if direction in ["outbound", "both"]:
         policy["spec"]["policyTypes"].append("Egress")
         
-        #Set up egress rules - allow all other traffic
         policy["spec"]["egress"] = [
-            #Allow DNS
+            # Allow DNS access (critical)
             {
                 "to": [],
                 "ports": [
                     {"port": 53, "protocol": "UDP"}
                 ]
             },
-            #Block specific target
             {
                 "to": [
-                    {"ipBlock": {"cidr": "0.0.0.0/0", "except": [target_host]}}
+                    {
+                        "namespaceSelector": {
+                            "matchLabels": {
+                                "kubernetes.io/metadata.name": service_namespace
+                            }
+                        },
+                        "podSelector": {
+                            "matchLabels": service_selector
+                        }
+                    }
                 ]
             }
         ]
     
-    #Handle inbound traffic
+    #Handle inbound traffic (service to pod)
     if direction in ["inbound", "both"]:
         policy["spec"]["policyTypes"].append("Ingress")
-        
-        #Set up ingress rules - deny from target but allow all other traffic
+
         policy["spec"]["ingress"] = [
             {
                 "from": [
-                    {"ipBlock": {"cidr": "0.0.0.0/0", "except": [target_host]}}
+                    {
+                        "namespaceSelector": {
+                            "matchLabels": {
+                                "kubernetes.io/metadata.name": service_namespace
+                            }
+                        },
+                        "podSelector": {
+                            "matchLabels": service_selector
+                        }
+                    }
                 ]
             }
         ]
@@ -104,10 +159,13 @@ def remove_network_policy(api_client, namespace, policy_name):
         logger.error(f"Failed to remove NetworkPolicy {policy_name}: {e}")
         return False
 
-def validate_connectivity(api_client, pod_info, target_host, port, expected_failure=False):
+def validate_connectivity(api_client, pod_info, target_service, port, expected_failure=False):
     pod_name = pod_info['name']
     namespace = pod_info['namespace']
     core_v1 = client.CoreV1Api(api_client)
+
+    #FQDN for target_service
+    service_fqdn = f"{target_service}.{namespace}.svc.cluster.local"
     
     #Path to test_connectivity.py script in project
     local_script_path = os.path.join(os.path.dirname(__file__), "test_connectivity.py")
@@ -121,8 +179,8 @@ def validate_connectivity(api_client, pod_info, target_host, port, expected_fail
             logger.info("Falling back to direct connectivity test")
             fallback_cmd = [
                 "/bin/sh", "-c", 
-                f"echo 'Testing connection to {target_host}:{port}' && " +
-                f"(timeout 5 bash -c 'exec 3<>/dev/tcp/{target_host}/{port}' && " +
+                f"echo 'Testing connection to {service_fqdn}:{port}' && " +
+                f"(timeout 5 bash -c 'exec 3<>/dev/tcp/{service_fqdn}/{port}' && " +
                 f"echo 'CONNECTION_RESULT: SUCCESS' || echo 'CONNECTION_RESULT: FAILED')"
             ]
             
@@ -142,10 +200,10 @@ def validate_connectivity(api_client, pod_info, target_host, port, expected_fail
             
             # Evaluate results
             if expected_failure and connection_succeeded:
-                logger.warning(f"Connection to {target_host}:{port} succeeded but should have failed")
+                logger.warning(f"Connection to {service_fqdn}:{port} succeeded but should have failed")
                 return False
             elif not expected_failure and connection_failed:
-                logger.warning(f"Connection to {target_host}:{port} failed but should have succeeded")
+                logger.warning(f"Connection to {service_fqdn}:{port} failed but should have succeeded")
                 return False
             elif connection_succeeded or connection_failed:
                 return True
@@ -177,9 +235,9 @@ def validate_connectivity(api_client, pod_info, target_host, port, expected_fail
         )
         
         #Run the test
-        test_cmd = ["python3", temp_path, target_host, str(port), "5"]
+        test_cmd = ["python3", temp_path, service_fqdn, str(port), "5"]
         
-        logger.debug(f"Running connectivity test to {target_host}:{port}")
+        logger.debug(f"Running connectivity test to {service_fqdn}:{port}")
         resp = core_v1.connect_get_namespaced_pod_exec(
             name=pod_name,
             namespace=namespace,
@@ -200,8 +258,8 @@ def validate_connectivity(api_client, pod_info, target_host, port, expected_fail
             logger.warning("Python test script failed, trying fallback method")
             fallback_cmd = [
                 "/bin/sh", "-c", 
-                f"echo 'Testing connection to {target_host}:{port}' && " +
-                f"(timeout 5 bash -c 'exec 3<>/dev/tcp/{target_host}/{port}' && " +
+                f"echo 'Testing connection to {service_fqdn}:{port}' && " +
+                f"(timeout 5 bash -c 'exec 3<>/dev/tcp/{service_fqdn}/{port}' && " +
                 f"echo 'CONNECTION_RESULT: SUCCESS' || echo 'CONNECTION_RESULT: FAILED')"
             ]
             
@@ -232,10 +290,10 @@ def validate_connectivity(api_client, pod_info, target_host, port, expected_fail
         
         #Check results
         if expected_failure and connection_succeeded:
-            logger.warning(f"Connection to {target_host}:{port} succeeded but should have failed")
+            logger.warning(f"Connection to {service_fqdn}:{port} succeeded but should have failed")
             return False
         elif not expected_failure and connection_failed:
-            logger.warning(f"Connection to {target_host}:{port} failed but should have succeeded")
+            logger.warning(f"Connection to {service_fqdn}:{port} failed but should have succeeded")
             return False
         elif connection_succeeded or connection_failed:
             return True
@@ -281,13 +339,13 @@ def main():
         help="Duration you want to maintain the partition for (in seconds)"
     )
     parser.add_argument(
-        "-t",
-        "--target-host",
+        "-ts",
+        "--target-service",
         type=str,
         required=False,
         default="mysql-primary",
-        metavar="HOST_NAME",
-        help="Host name to block traffic to"
+        metavar="SERVICE_NAME",
+        help="Service name to block traffic to"
     )
     parser.add_argument(
         "-p",
@@ -329,7 +387,7 @@ def main():
     args = parser.parse_args()
     pod_uid = args.pod_uid
     duration = args.duration
-    target_host = args.target_host
+    target_service = args.target_service
     port = args.port
     protocol = args.protocol
     direction = args.direction
@@ -425,7 +483,7 @@ def main():
             "pod_uid": pod_uid,
             "pod_name": target_pod_info.get('name'),
             "pod_namespace": target_pod_info.get('namespace'),
-            "target_host": target_host,
+            "target_service": target_service,
             "port": port,
             "protocol": protocol,
             "direction": direction,
@@ -440,7 +498,7 @@ def main():
     #Execute the experiment
     try:
         logger.info(f"Starting network partition experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid})")
-        partition_successful, policy_name = apply_network_policy(api_client, target_pod_info, target_host, direction)
+        partition_successful, policy_name = apply_network_policy(api_client, target_pod_info, target_service, direction)
 
         if partition_successful:
             logger.info(f"Network partition successfully created with policy {policy_name}")
@@ -449,10 +507,10 @@ def main():
             time.sleep(3)
             
             #Validate partition was effective
-            if target_host and port:
-                logger.info(f"Validating connectivity to {target_host}:{port}")
+            if target_service and port:
+                logger.info(f"Validating connectivity to {target_service}")
                 partition_validated = validate_connectivity(
-                    api_client, target_pod_info, target_host, port, expected_failure=True
+                    api_client, target_pod_info, target_service, port, expected_failure=True
                 )
                 logger.info(f"Partition validation {'succeeded' if partition_validated else 'failed'}")
             
@@ -474,10 +532,10 @@ def main():
             time.sleep(3)
             
             # Validate rollback was effective (optional)
-            if target_host and port:
-                logger.info(f"Validating connectivity to {target_host}:{port} after rollback")
+            if target_service and port:
+                logger.info(f"Validating connectivity to {target_service} after rollback")
                 rollback_validated = validate_connectivity(
-                    api_client, target_pod_info, target_host, port, expected_failure=False
+                    api_client, target_pod_info, target_service, port, expected_failure=False
                 )
                 logger.info(f"Rollback validation {'succeeded' if rollback_validated else 'failed'}")
         else:
