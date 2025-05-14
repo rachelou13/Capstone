@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-scraper
+  labels:
+    app: metrics-scraper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metrics-scraper
+  template:
+    metadata:
+      labels:
+        app: metrics-scraper
+    spec:
+      serviceAccountName: metrics-scraper-sa
+      containers:
+      - name: scraper
+        image: henrose/metrics-scraper:latest
+        command: ["python", "metrics_scraper.py"]
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: TARGET_POD_NAME
+          value: "mysql-primary-0"
+        - name: TARGET_POD_NAMESPACE
+          value: "default"
+        - name: TARGET_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: SCRAPE_INTERVAL
+          value: "5"

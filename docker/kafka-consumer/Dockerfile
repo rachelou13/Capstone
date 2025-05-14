@@ -5,6 +5,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY docker/kafka-consumer/kafka_consumer.py .
+COPY python/utils/kafka_consumer.py .
 
 CMD ["python", "kafka_consumer.py"]

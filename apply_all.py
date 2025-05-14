@@ -1,10 +1,6 @@
 import logging 
-import os
 import subprocess
 import sys
-import threading
-import uuid
-import time
 
 from kubernetes import client, config
 from python.data_scripts.infra_metrics_scraper import InfraMetricsScraper
@@ -101,6 +97,73 @@ def select_pod(k8s_client):
         except ValueError:
             print("Please enter a valid number.")
 
+def create_metrics_scraper_config(pod_info, scrape_interval=5):
+    try:
+        print("Creating metrics scraper configuration...")
+        
+        # Create a ConfigMap for storing pod info - add a proper name field
+        configmap_yaml = f"""
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+                name: metrics-scraper-config
+            data:
+                TARGET_POD_NAME: "{pod_info['name']}"
+                TARGET_POD_NAMESPACE: "{pod_info['namespace']}"
+                TARGET_POD_UID: "{pod_info['uid']}"
+                SCRAPE_INTERVAL: "{scrape_interval}"
+        """
+        # Save ConfigMap YAML to a temporary file
+        with open('/tmp/metrics-scraper-config.yaml', 'w') as f:
+            f.write(configmap_yaml)
+        
+        # Apply the ConfigMap
+        try:
+            result = subprocess.run(
+                ["kubectl", "apply", "-f", "/tmp/metrics-scraper-config.yaml"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if result.returncode != 0:
+                print(f"Failed to create metrics scraper ConfigMap")
+                print(f"Error: {result.stderr}")
+                return False
+            else:
+                print(f"Successfully created metrics scraper ConfigMap")
+                return True
+        except Exception as e:
+            print(f"Error creating metrics scraper ConfigMap: {e}")
+            return False
+            
+    except Exception as e:
+        print(f"Failed to set up metrics scraper configuration: {e}")
+        return False
+
+def update_metrics_scraper_deployment(pod_info):
+    try:
+        # Update the deployment to target the selected pod
+        result = subprocess.run(
+            ["kubectl", "patch", "deployment", "metrics-scraper", "-p", 
+             f'{{"spec":{{"template":{{"spec":{{"containers":[{{"name":"scraper","env":[{{"name":"TARGET_POD_NAME","value":"{pod_info["name"]}"}},{{"name":"TARGET_POD_NAMESPACE","value":"{pod_info["namespace"]}"}}]}}]}}}}}}}}'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        if result.returncode != 0:
+            print(f"Failed to update metrics scraper deployment")
+            print(f"Error: {result.stderr}")
+            return False
+        else:
+            print(f"Successfully updated metrics scraper deployment")
+            # Restart the deployment to apply changes
+            subprocess.run(["kubectl", "rollout", "restart", "deployment", "metrics-scraper"])
+            return True
+    except Exception as e:
+        print(f"Error updating metrics scraper deployment: {e}")
+        return False
+
 def apply_resources():
     directories = [
         "k8s/configmaps",
@@ -128,46 +191,6 @@ def apply_resources():
         except Exception as e:
             print(f"Error applying resources in {directory}: {e}")
 
-def start_metrics_scraper(pod_info, scrape_interval=5):
-
-    try:
-        #Wait for Kafka to start up
-        time.sleep(15)
-
-        #Set unique id for scraper
-        scraper_id = str(uuid.uuid4())
-
-        #Initialize the scraper
-        scraper = InfraMetricsScraper(
-            scraper_id=scraper_id,
-            target_pod_info=pod_info,
-            scrape_interval=scrape_interval
-        )
-
-        #Check if /tmp exists and is writable
-        if not os.path.exists('/tmp'):
-            os.makedirs('/tmp', exist_ok=True)
-            logger.debug("Created /tmp directory")
-        
-        if not os.access('/tmp', os.W_OK):
-            logger.warning("/tmp directory is not writable")
-        else:
-            logger.debug("/tmp directory exists and is writable")
-        
-        #Save reference for other scripts to access
-        InfraMetricsScraper.save_instance(scraper)
-        
-        #Start the scraper in a thread so it continues running after apply_all exits
-        scraper_thread = threading.Thread(target=scraper.start, daemon=True)
-        scraper_thread.start()
-        
-        print(f"Started infrastructure metrics scraper for pod {pod_info['namespace']}/{pod_info['name']}")
-        print("Scraper will continue running in the background.")
-        return scraper
-    except Exception as e:
-        print(f"Failed to start infrastructure metrics scraper: {e}")
-        return None
-
 def main():
     #K8s client setup
     k8s_client = get_k8s_client()
@@ -194,14 +217,13 @@ def main():
         print("Invalid input. Using default interval of 5 seconds.")
         scrape_interval = 5
     
-    #Start the metrics scraper
-    print("\n" + title_separator + " STARTING INFRASTRUCTURE METRICS SCRAPER " + title_separator + "\n")
-    scraper = start_metrics_scraper(pod_info, scrape_interval)
+    #Configure metrics scraper
+    print("\n" + title_separator + " CONFIGURING INFRASTRUCTURE METRICS SCRAPER " + title_separator + "\n")
+    create_metrics_scraper_config(pod_info, scrape_interval)
+    update_metrics_scraper_deployment(pod_info)
     
-    if scraper:
-        print("\nInfrastructure metrics scraper is now running.")
-        print("It will continue to run until stopped by delete_all.py.")
-        print("\nYou can now use run_experiment.py to execute chaos experiments.")
+    print("\nInfrastructure metrics scraper has been configured and deployed.")
+    print("\nYou can now use run_experiment.py to execute chaos experiments.")
 
 if __name__ == "__main__":
     main()

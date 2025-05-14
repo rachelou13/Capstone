@@ -4,8 +4,6 @@ import sys
 import time
 import logging
 
-from python.data_scripts.infra_metrics_scraper import InfraMetricsScraper
-
 title_separator = "="*6
 
 #Set up logging
@@ -41,32 +39,24 @@ def delete_resources():
 
 def stop_metrics_scraper():
     try:
-        #Get the running scraper instance
-        scraper = InfraMetricsScraper.get_instance()
+        print("Stopping metrics-scraper deployment...")
+        # Scale down the deployment to 0 replicas
+        result = subprocess.run(
+            ["kubectl", "scale", "deployment", "metrics-scraper", "--replicas=0"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
         
-        if scraper:
-            print("Found running infrastructure metrics scraper. Closing...")
-            
-            #Close the scraper
-            scraper.close()
-            print("Scraper shutdown completed")
-            
-            #Remove the pickle file
-            try:
-                os.remove('/tmp/infra_scraper.pickle')
-                logger.info("Removed scraper instance file")
-            except FileNotFoundError:
-                logger.warning("Scraper instance file not found")
-            except Exception as e:
-                logger.error(f"Error removing scraper instance file: {e}")
-                
-            return True
-        else:
-            logger.warning("No running infrastructure metrics scraper found")
+        if result.returncode != 0:
+            print(f"Failed to stop metrics-scraper deployment")
+            print(f"Error: {result.stderr}")
             return False
-            
+        else:
+            print(f"Successfully stopped metrics-scraper deployment")
+            return True
     except Exception as e:
-        logger.error(f"Error stopping infrastructure metrics scraper: {e}")
+        print(f"Error stopping metrics-scraper deployment: {e}")
         return False
 
 def main():

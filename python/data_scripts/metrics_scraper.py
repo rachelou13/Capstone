@@ -1,20 +1,93 @@
 import os
 import logging
 import time
+import json
+import socket
 from datetime import datetime, timezone
-import pickle
+import sys
 
 from kubernetes import client, config
 from kubernetes.stream import stream
+from kafka import KafkaProducer
+from kafka.errors import NoBrokersAvailable, KafkaError
 
-from python.utils.kafka_producer import CapstoneKafkaProducer
-
-logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+#Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class InfraMetricsScraper:
-    #Class for monitoring infra metrics during chaos experiments
-    def __init__(self, scraper_id, target_pod_info, kube_config="~/.kube/config", scrape_interval=5):
+class KafkaMetricsProducer:
+    def __init__(self, brokers=None, topic=None):
+        self.brokers = brokers if brokers else os.environ.get('DEFAULT_KAFKA_BROKERS', 'kafka-0.kafka-headless.default.svc.cluster.local:9094')
+        self.topic = topic if topic else os.environ.get('DEFAULT_KAFKA_TOPIC', 'infra-metrics')
+        self.producer = None
+        self.connected = False
+        self._connect()
+
+    @staticmethod
+    def safe_serialize_key(key):
+        try:
+            return str(key).encode('utf-8') if key else None
+        except Exception as e:
+            logger.warning(f"Failed to serialize key: {e}")
+            return None
+
+    @staticmethod
+    def safe_serialize_value(value):
+        try:
+            return json.dumps(value).encode('utf-8') if value else None
+        except Exception as e:
+            logger.warning(f"Failed to serialize value: {e}")
+            return {}
+        
+    def _connect(self):
+        try:
+            self.producer = KafkaProducer(
+               bootstrap_servers=self.brokers,
+               key_serializer=self.safe_serialize_key,
+               value_serializer=self.safe_serialize_value,
+               client_id='kafka-python-producer'
+            )
+            self.connected = True
+            logger.info(f"Kafka producer successfully connected to {self.brokers}")
+        except NoBrokersAvailable:
+            logger.error(f"Unable to find brokers at {self.brokers}. Kafka messages will not be sent.")
+            self.producer = None
+            self.connected = False
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during Kafka connection: {e}")
+            self.producer = None
+            self.connected = False
+
+    def send_event(self, event_data, key):
+        if not self.connected:
+            self._connect()
+
+        if not self.connected or not self.producer:
+            logger.warning(f"Kafka producer not connected. Event will not be sent: {event_data.get('event_type', 'N/A')} - {key}")
+            return False
+        
+        try:
+            self.producer.send(self.topic, 
+                              key=key,
+                              value=event_data)
+            logger.info(f"Sent event to Kafka: {event_data.get('event_type', 'N/A')} - {key}")
+            return True
+        except KafkaError as e:
+            logger.error(f"Failed to send event to Kafka topic '{self.topic}': {e}")
+            return False
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while sending event to Kafka: {e}")
+            return False
+        
+    def close(self):
+        if self.producer:
+            logger.info("Closing Kafka producer")
+            self.producer.flush()
+            self.producer.close()
+            self.connected = False
+
+class StandaloneMetricsScraper:
+    def __init__(self, scraper_id, target_pod_info, scrape_interval=5):
         self.id = scraper_id
         self.target_pod_uid = target_pod_info['uid']
         self.target_pod_name = target_pod_info['name']
@@ -22,71 +95,31 @@ class InfraMetricsScraper:
         self.target_node_name = target_pod_info['node']
         self.allocatable_cpu = None
         self.allocatable_memory = None
-        self.kube_config = kube_config
         self.scrape_interval = scrape_interval
         self.experiment_detected = False
-        self.kafka_prod = CapstoneKafkaProducer(topic='infra-metrics')
+        self.kafka_prod = KafkaMetricsProducer(topic='infra-metrics')
         self.run_loop = None
         self.start_time = None
-        self.end_time = None
         self.message_sent_count = 0
 
-        #K8s client setup
         if not self._k8s_client_setup():
-            raise Exception(f"Unexpected error initializing Kubernetes client(s)")
+            raise Exception("Failed to initialize Kubernetes clients")
         
-        #Get allocatable CPU and memory
         if not self._resolve_target_node_info():
-            raise Exception(f"Unexpected error parsing allocated CPU and memory")
-        
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        #Remove unpickleable objects
-        state['kafka_prod'] = None
-        state['core_v1'] = None
-        state['custom_obj_v1'] = None
+            raise Exception("Failed to retrieve allocatable resources for node")
 
-        #Store kube config info to reconnect
-        state['_kube_config'] = self.kube_config
-
-        return state
-    
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        
-        #Recreate the Kafka producer
-        self.kafka_prod = CapstoneKafkaProducer(topic='infra-metrics')
-        
-        #Reestablish k8s client
-        if not self._k8s_client_setup():
-            raise Exception("Failed to reestablish Kubernetes client connection after unpickling")
-        
-    def set_experiment_detected(self, experiment_detected):
-        self.experiment_detected = experiment_detected
-
-    @staticmethod
-    def save_instance(scraper_instance):
-        with open('/tmp/infra_scraper.pickle', 'wb') as f:
-            pickle.dump(scraper_instance, f)
-
-    @staticmethod
-    def get_instance():
-        try:
-            with open('/tmp/infra_scraper.pickle', 'rb') as f:
-                import pickle
-                return pickle.load(f)
-        except (FileNotFoundError, pickle.UnpicklingError):
-            return None
-    
     def _k8s_client_setup(self):
         try:
-            if self.kube_config:
-                config.load_kube_config(config_file=self.kube_config)
-            else:
+            try:
                 config.load_incluster_config()
+                logger.info("Using in-cluster Kubernetes configuration")
+            except config.config_exception.ConfigException:
+                config.load_kube_config()
+                logger.info("Using default Kubernetes configuration")
+                
             self.core_v1 = client.CoreV1Api()
             self.custom_obj_v1 = client.CustomObjectsApi()
-            logger.info("Kubernetes clients initialized")
+            logger.info("Kubernetes clients initialized successfully")
             return True
         except Exception as e:
             logger.error(f"Failed to initialize Kubernetes client: {e}")
@@ -97,8 +130,7 @@ class InfraMetricsScraper:
                     "source": "infra_metrics_scraper", 
                     "error": f"K8s client init failed: {e}"
                 }
-
-                self.kafka_prod.send_event(k8s_fail_event, self.experiment_id)
+                self.kafka_prod.send_event(k8s_fail_event, self.id)
             return False
 
     @staticmethod
@@ -163,6 +195,7 @@ class InfraMetricsScraper:
         if not self.target_node_name:
             logger.error("Target node name is missing. Cannot fetch node allocatable resources.")
             return False
+        
         try: 
             node = self.core_v1.read_node(self.target_node_name)
         except client.exceptions.ApiException as e:
@@ -188,22 +221,22 @@ class InfraMetricsScraper:
         cpu_quantity_str = allocatable_resources.get('cpu')
         memory_quantity_str = allocatable_resources.get('memory')
 
-        #Parse CPU quantity from string
         success_cpu = False
         if cpu_quantity_str:
             try:
                 self.allocatable_cpu = self._parse_quantity(cpu_quantity_str)
+                logger.info(f"Node {self.target_node_name} has {self.allocatable_cpu} allocatable CPU units")
                 success_cpu = True
             except ValueError as e:
                 logger.error(f"Failed to parse CPU quantity '{cpu_quantity_str}' for node '{self.target_node_name}': {e}")
         else:
             logger.warning(f"Allocatable CPU quantity not found for node '{self.target_node_name}'.")
 
-        #Parse memory quantity from string
         success_memory = False
         if memory_quantity_str:
             try:
                 self.allocatable_memory = self._parse_quantity(memory_quantity_str)
+                logger.info(f"Node {self.target_node_name} has {self.allocatable_memory} bytes of allocatable memory")
                 success_memory = True
             except ValueError as e:
                 logger.error(f"Failed to parse Memory quantity '{memory_quantity_str}' for node '{self.target_node_name}': {e}")
@@ -227,7 +260,6 @@ class InfraMetricsScraper:
                     resources = {}
                     
                     if container.resources:
-                        #Get limits if available, otherwise use requests
                         if container.resources.limits:
                             cpu_limit = container.resources.limits.get('cpu')
                             memory_limit = container.resources.limits.get('memory')
@@ -238,7 +270,6 @@ class InfraMetricsScraper:
                             if memory_limit:
                                 resources['memory_limit'] = self._parse_quantity(memory_limit)
                         
-                        #If no limits, try using requests
                         if container.resources.requests:
                             if not resources.get('cpu_limit') and container.resources.requests.get('cpu'):
                                 resources['cpu_limit'] = self._parse_quantity(container.resources.requests.get('cpu'))
@@ -289,7 +320,6 @@ class InfraMetricsScraper:
                         try:
                             cpu_usage = self._parse_quantity(cpu_usage_str)
                             
-                            #Calculate CPU percentage if limit is available
                             if container_name in container_resources and 'cpu_limit' in container_resources[container_name]:
                                 cpu_limit = container_resources[container_name]['cpu_limit']
                                 if cpu_limit > 0:
@@ -303,7 +333,6 @@ class InfraMetricsScraper:
                         try:
                             memory_usage = self._parse_quantity(memory_usage_str)
                             
-                            #Calculate memory percentage if limit is available
                             if container_name in container_resources and 'memory_limit' in container_resources[container_name]:
                                 memory_limit = container_resources[container_name]['memory_limit']
                                 if memory_limit > 0:
@@ -346,18 +375,14 @@ class InfraMetricsScraper:
             return
             
         if not self.kafka_prod:
-            logger.error("Kafka producer not is missing. Monitoring cannot start.")
+            logger.error("Kafka producer is missing. Monitoring cannot start.")
             self.run_loop = False
             return
         
-        if not os.path.exists('/tmp/scraper_message_count.txt'):
-            with open('/tmp/scraper_message_count.txt', 'w') as f:
-                f.write('0')
-        
+        logger.info(f"Starting monitoring loop with {self.scrape_interval}s interval")
         while self.run_loop: 
             time_scraped = datetime.now(timezone.utc)
             
-            #Get node metrics
             node_metrics_data = None
             cpu_usage = None
             memory_usage = None
@@ -402,19 +427,15 @@ class InfraMetricsScraper:
             if memory_usage is not None and self.allocatable_memory > 0:
                 memory_util_percent = (memory_usage / self.allocatable_memory) * 100.0
             
-            #Get container metrics
             container_metrics = self._get_pod_metrics()
             
-            log_message = f"Sending kafka event with:\nNode metrics: {cpu_usage}, {cpu_util_percent}, {memory_usage}, {memory_util_percent}"
+            log_message = f"Sending kafka event with:\nNode metrics: CPU={cpu_usage}, CPU%={cpu_util_percent}, Mem={memory_usage}, Mem%={memory_util_percent}"
             if container_metrics:
                 container_logs = []
                 for container_name, metrics in container_metrics.items():
-                    container_logs.append(f"{container_name}: CPU={metrics['cpu_usage']}, CPU percent={metrics['cpu_percent']}, Memory={metrics['memory_usage']}, Memory percent={metrics['memory_percent']}")
+                    container_logs.append(f"{container_name}: CPU={metrics['cpu_usage']}, CPU%={metrics['cpu_percent']}, Mem={metrics['memory_usage']}, Mem%={metrics['memory_percent']}")
                 log_message += f"\nContainer metrics: {' | '.join(container_logs)}"
             logger.info(log_message)
-
-            if container_metrics:
-                logger.info(f"Including container metrics for {len(container_metrics)} containers")
             
             metrics_scrape = {
                 "timestamp": time_scraped.isoformat(),
@@ -442,7 +463,6 @@ class InfraMetricsScraper:
                 }
             }
             
-            #Add container metrics if available
             if container_metrics:
                 for container_name, metrics in container_metrics.items():
                     metrics_scrape["metrics"]["containers"][container_name] = {
@@ -457,53 +477,83 @@ class InfraMetricsScraper:
                     }
 
             if not self.kafka_prod.send_event(metrics_scrape, self.id):
-                logger.warning(f"Failed to send scraped INFRA METRICS to Kafka for node {self.target_node_name}. See producer log for error.")
+                logger.warning(f"Failed to send scraped INFRA METRICS to Kafka for node {self.target_node_name}.")
             else:
                 self.message_sent_count += 1
-                #Store message count in file to be able to be retrieved by delete_all.py
-                with open('/tmp/scraper_message_count.txt', 'w') as f:
-                    f.write(str(self.message_sent_count))
+                if self.message_sent_count % 10 == 0:
+                    logger.info(f"Sent {self.message_sent_count} metrics events to Kafka")
+            
             time.sleep(self.scrape_interval)
     
     def start(self):
         self.run_loop = True
         self.start_time = datetime.now(timezone.utc)
-
-        #Store start time in file to be able to be retrieved by delete_all.py
-        with open('/tmp/scraper_start_time.txt', 'w') as f:
-            f.write(self.start_time.isoformat())
-
+        logger.info(f"Starting metrics scraper for pod {self.target_pod_namespace}/{self.target_pod_name} on node {self.target_node_name}")
         self._monitor()
-
+        
     def close(self):
-        try:
-            with open('/tmp/scraper_start_time.txt', 'r') as f:
-                start_time_str = f.read().strip()
-                self.start_time = datetime.fromisoformat(start_time_str)
-        except:
-            pass
-
-        try:
-            with open('/tmp/scraper_message_count.txt', 'r') as f:
-                self.message_sent_count = int(f.read().strip())
-        except:
-            pass
-
+        self.end_time = datetime.now(timezone.utc)
+        
         duration = None
-
         if self.start_time and self.end_time:
             duration = (self.end_time - self.start_time).total_seconds()
+            
         if duration:
             logger.info(f"Closing infra metrics scraper - logged metrics for {duration} seconds - sent {self.message_sent_count} messages to Kafka")
         else:
-            logger.info(f"Closing infra metrics scraper - duration not calculated as start/end time incomplete.")
+            logger.info(f"Closing infra metrics scraper - duration not calculated")
+            
         self.run_loop = False
-        self.kafka_prod.close()
+        if self.kafka_prod:
+            self.kafka_prod.close()
 
-        #Clean up tmp files
-        for file_path in ['/tmp/scraper_start_time.txt', '/tmp/scraper_message_count.txt']:
-            try:
-                os.remove(file_path)
-            except:
-                pass
+    def set_experiment_detected(self, experiment_detected):
+        self.experiment_detected = experiment_detected
+        logger.info(f"Experiment detected flag set to: {experiment_detected}")
 
+
+def main():
+    pod_name = os.environ.get('TARGET_POD_NAME')
+    pod_namespace = os.environ.get('TARGET_POD_NAMESPACE', 'default')
+    pod_uid = os.environ.get('TARGET_POD_UID', '')
+    node_name = os.environ.get('TARGET_NODE_NAME')
+    scrape_interval = int(os.environ.get('SCRAPE_INTERVAL', '5'))
+    
+    if not pod_name or not node_name:
+        logger.error("Missing required environment variables: TARGET_POD_NAME and TARGET_NODE_NAME")
+        sys.exit(1)
+    
+    logger.info(f"Initializing metrics scraper for pod {pod_namespace}/{pod_name} on node {node_name}")
+    
+    pod_info = {
+        'name': pod_name,
+        'namespace': pod_namespace,
+        'uid': pod_uid,
+        'node': node_name
+    }
+    
+    scraper_id = os.environ.get('SCRAPER_ID', datetime.now().strftime('%Y%m%d%H%M%S'))
+    
+    try:
+        scraper = StandaloneMetricsScraper(
+            scraper_id=scraper_id,
+            target_pod_info=pod_info,
+            scrape_interval=scrape_interval
+        )
+        
+        import signal
+        def signal_handler(sig, frame):
+            logger.info(f"Received signal {sig}, shutting down...")
+            scraper.close()
+            sys.exit(0)
+            
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
+        scraper.start()
+    except Exception as e:
+        logger.error(f"Error in metrics scraper: {e}", exc_info=True)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

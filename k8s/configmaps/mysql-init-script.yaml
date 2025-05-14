@@ -1,11 +1,28 @@
 apiVersion: v1
-data:
-  init_db.sql: "CREATE DATABASE IF NOT EXISTS summary_db;\r\nUSE summary_db;\r\n\r\nCREATE
-    TABLE IF NOT EXISTS infra_metrics (\r\n    id INT AUTO_INCREMENT PRIMARY KEY,\r\n
-    \   timestamp DATETIME,\r\n    source VARCHAR(100),\r\n    cpu_percent FLOAT,\r\n
-    \   cpu_used FLOAT,\r\n    mem_percent FLOAT,\r\n    mem_used FLOAT,\r\n    node_name
-    VARCHAR(100),\r\n    pod_name VARCHAR(100),\r\n    pod_namespace VARCHAR(100)\r\n);\r\n"
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: mysql-init-script
+  namespace: default
+data:
+  init.sql: |
+    CREATE DATABASE IF NOT EXISTS summary_db;
+    USE summary_db;
+    CREATE TABLE IF NOT EXISTS infra_metrics (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      timestamp DATETIME,
+      source VARCHAR(100),
+      experiment_detected BOOLEAN DEFAULT FALSE,
+      cpu_percent FLOAT,
+      cpu_used FLOAT,
+      mem_percent FLOAT,
+      mem_used FLOAT,
+      node_name VARCHAR(100),
+      pod_name VARCHAR(100),
+      pod_namespace VARCHAR(100),
+      container_name VARCHAR(100) NULL,
+      metric_level VARCHAR(20),
+      INDEX idx_timestamp (timestamp),
+      INDEX idx_experiment (experiment_detected),
+      INDEX idx_container (container_name),
+      INDEX idx_metric_level (metric_level)
+    );

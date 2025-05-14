@@ -11,6 +11,43 @@ from kafka.errors import KafkaError, NoBrokersAvailable
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+def connect_mongodb_with_retry(host, user, password, max_attempts=20):
+    logger.info(f"Attempting to connect to MongoDB at {host}...")
+    for attempt in range(max_attempts):
+        try:
+            client = MongoClient(f"mongodb://{user}:{password}@{host}:27017/", 
+                                serverSelectionTimeoutMS=5000)
+            # Force a connection to verify it works
+            client.admin.command('ismaster')
+            logger.info(f"Successfully connected to MongoDB at {host}")
+            return client
+        except Exception as e:
+            logger.warning(f"Attempt {attempt+1}/{max_attempts} - MongoDB connection failed: {e}")
+            if attempt < max_attempts - 1:
+                time.sleep(5)
+    
+    raise Exception(f"Failed to connect to MongoDB at {host} after {max_attempts} attempts")
+
+def connect_with_retry(host, user, password, database, max_attempts=20):
+    for attempt in range(max_attempts):
+        try:
+            conn = mysql.connector.connect(
+                host=host,
+                user=user,
+                password=password,
+                database=database,
+                port=3306,
+                connection_timeout=5
+            )
+            logger.info(f"Successfully connected to MySQL at {host}")
+            return conn
+        except Exception as e:
+            logger.warning(f"Attempt {attempt+1}/{max_attempts} - MySQL connection failed: {e}")
+            if attempt < max_attempts - 1:
+                time.sleep(5)
+    
+    raise Exception(f"Failed to connect to MySQL at {host} after {max_attempts} attempts")
+
 def wait_for_kafka(brokers, timeout=5, max_attempts=20):
     logger.info("Waiting for Kafka brokers to become available...")
     for attempt in range(max_attempts):
@@ -45,18 +82,19 @@ def main():
     TOPICS = ["proxy-logs", "infra-metrics", "chaos-events"]
 
     # MySQL connection
-    mysql_conn = mysql.connector.connect(
-        host="mysql-summary-records",
-        user="root",
-        password="root",
-        database="summary_db"
-    )
+    mysql_conn = connect_with_retry("mysql-summary-records", "root", "root", "summary_db")
     mysql_cursor = mysql_conn.cursor()
 
     # MongoDB connection
-    mongo_client = MongoClient("mongodb://root:root@mongodb-service:27017/")
-    mongo_db = mongo_client["metrics_db"]
-    chaos_collection = mongo_db["chaos_events"]
+    try:
+        mongo_client = connect_mongodb_with_retry("mongodb-service", "root", "root")
+        mongo_db = mongo_client["metrics_db"]
+        chaos_collection = mongo_db["chaos_events"]
+    except Exception as e:
+        logger.error(f"Fatal error: Failed to connect to MongoDB: {e}")
+        mongo_client = None
+        mongo_db = None
+        chaos_collection = None
 
     try:
         wait_for_kafka(KAFKA_BROKERS)
@@ -142,11 +180,21 @@ def main():
 
         elif topic == 'chaos-events':
             print(f"sending message from {topic} to MongoDB")
-            try:
-                chaos_collection.insert_one(value)
-                logger.info("Inserted chaos event: %s from %s", value.get("event_type"), value.get("source"))
-            except Exception as e:
-                logger.error(f"Failed to insert into MongoDB: {e}")
+            if chaos_collection is not None:
+                try:
+                    chaos_collection.insert_one(value)
+                    logger.info("Inserted chaos event: %s from %s", value.get("event_type"), value.get("source"))
+                except Exception as e:
+                    logger.error(f"Failed to insert into MongoDB: {e}")
+                    # Try to reconnect
+                    try:
+                        mongo_client = connect_mongodb_with_retry("mongodb-service", "root", "root")
+                        mongo_db = mongo_client["metrics_db"]
+                        chaos_collection = mongo_db["chaos_events"]
+                    except Exception as reconnect_error:
+                        logger.error(f"Failed to reconnect to MongoDB: {reconnect_error}")
+            else:
+                logger.error("MongoDB connection not available, skipping chaos event")
         else:
             print(f"[UNKNOWN TOPIC] {topic}: {value}")
 

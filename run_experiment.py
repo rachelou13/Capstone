@@ -3,8 +3,6 @@ import subprocess
 import sys
 from kubernetes import client, config
 
-from python.data_scripts.infra_metrics_scraper import InfraMetricsScraper
-
 title_separator = "="*6
 
 #Set up logging
@@ -102,23 +100,6 @@ def select_pod(k8s_client):
         except ValueError:
             print("Please enter a valid number.")
 
-def update_experiment_flag(flag_value):
-    try:
-        #Get the running scraper instance
-        scraper = InfraMetricsScraper.get_instance()
-        
-        if scraper:
-            scraper.set_experiment_detected(flag_value)
-            logger.debug(f"Updated experiment detection flag to: {flag_value}")
-            return True
-        else:
-            print("No running metrics scraper found. Start apply_all.py first.")
-            return False
-            
-    except Exception as e:
-        print(f"Error updating experiment detection flag: {e}")
-        return False
-
 def run_resource_exhaustion(pod_info):
     print("\n" + title_separator + " RESOURCE EXHAUSTION EXPERIMENT " + title_separator  + "\n")
     print("Parameters (press Enter to use default):")
@@ -150,15 +131,12 @@ def run_resource_exhaustion(pod_info):
     
     try:
         print("\nExecuting experiment...")
-        update_experiment_flag(True)
         subprocess.run(cmd, check=True)
         print("\nExperiment completed successfully!")
     except subprocess.CalledProcessError as e:
         print(f"\nError running experiment: {e}")
     except Exception as e:
         print(f"\nUnexpected error: {e}")
-    finally:
-        update_experiment_flag(False)
     
     input("\nPress Enter to continue...")
 
@@ -194,15 +172,12 @@ def run_process_termination(pod_info):
     
     try:
         print("\nExecuting experiment...")
-        update_experiment_flag(True)
         subprocess.run(cmd, check=True)
         print("\nExperiment completed successfully!")
     except subprocess.CalledProcessError as e:
         print(f"\nError running experiment: {e}")
     except Exception as e:
         print(f"\nUnexpected error: {e}")
-    finally:
-        update_experiment_flag(False)
     
     input("\nPress Enter to continue...")
 
