@@ -12,10 +12,11 @@ from python.utils.kafka_producer import CapstoneKafkaProducer
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def exec_command_in_pod(api, pod_name, namespace, container_name, command_list):
+def exec_command_in_pod(api_client, pod_name, namespace, container_name, command_list):
     try:
+        core_v1 = client.CoreV1Api(api_client)
         logger.debug(f"Executing in {namespace}/{pod_name}/{container_name}: {command_list}")
-        resp = stream(api.connect_get_namespaced_pod_exec,
+        resp = stream(core_v1.connect_get_namespaced_pod_exec,
                       pod_name,
                       namespace,
                       container=container_name,
@@ -34,15 +35,15 @@ def exec_command_in_pod(api, pod_name, namespace, container_name, command_list):
         logger.error(f"Unexpected error executing command in {namespace}/{pod_name}/{container_name}: {e}")
         return None, str(e), 1
 
-def get_cgroup_info(api, pod_name, namespace, container_name, pid):
+def get_cgroup_info(api_client, pod_name, namespace, container_name, pid):
     logger.info(f"Attempting to retrieve cgroup information for PID {pid}")
-    stdout, stderr, _ = exec_command_in_pod(api, pod_name, namespace, container_name, ['cat', f'/proc/{pid}/cgroup'])
+    stdout, stderr, _ = exec_command_in_pod(api_client, pod_name, namespace, container_name, ['cat', f'/proc/{pid}/cgroup'])
     if stdout is not None:
         return stdout
     logger.warning(f"Failed to get cgroup information for PID {pid}. Stderr: {stderr}")
     return ""
 
-def find_and_terminate_process(api, pod_info, container_names, pod_uid, container_id_prefix, process_pattern):
+def find_and_terminate_process(api_client, pod_info, container_names, pod_uid, container_id_prefix, process_pattern):
     process_terminated_count = 0
     pod_name = pod_info['name']
     namespace = pod_info['namespace']
@@ -64,7 +65,7 @@ def find_and_terminate_process(api, pod_info, container_names, pod_uid, containe
 
     for container_name in container_names:
         logger.info(f"Scanning container '{container_name}' in pod '{namespace}/{pod_name}'")
-        stdout, stderr, _ = exec_command_in_pod(api, pod_name, namespace, container_name, list_proc_cmd)
+        stdout, stderr, _ = exec_command_in_pod(api_client, pod_name, namespace, container_name, list_proc_cmd)
         
         if stdout is None:
             logger.error(f"Failed to list processes in {namespace}/{pod_name}/{container_name}. Error: {stderr}")
@@ -81,7 +82,7 @@ def find_and_terminate_process(api, pod_info, container_names, pod_uid, containe
                 continue
             logger.debug(f"Checking PID {p_pid} (Name: {p_name}, Cmdline: {p_cmdline[:50]}...) in {container_name}")
 
-            cgroup_info = get_cgroup_info(api, pod_name, namespace, container_name, p_pid)
+            cgroup_info = get_cgroup_info(api_client, pod_name, namespace, container_name, p_pid)
             if not cgroup_info:
                 logger.debug(f"Skipping PID {p_pid} in {container_name} - failed to get cgroup information.")
                 continue
@@ -119,7 +120,7 @@ def find_and_terminate_process(api, pod_info, container_names, pod_uid, containe
 
             #Send kill command
             kill_cmd = ['kill', str(p_pid)]
-            _, stderr_kill, _ = exec_command_in_pod(api, pod_name, namespace, container_name, kill_cmd)
+            _, stderr_kill, _ = exec_command_in_pod(api_client, pod_name, namespace, container_name, kill_cmd)
             if stderr_kill and "No such process" not in stderr_kill:
                 logger.warning(f"Error sending SIGTERM to PID {p_pid} in {container_name}: {stderr_kill}")
             else:
@@ -128,7 +129,7 @@ def find_and_terminate_process(api, pod_info, container_names, pod_uid, containe
             #Wait for confirmation
             time.sleep(3)
             check_alive_cmd = ['ps', '-p', str(p_pid)]
-            stdout_check, _, _ = exec_command_in_pod(api, pod_name, namespace, container_name, check_alive_cmd)
+            stdout_check, _, _ = exec_command_in_pod(api_client, pod_name, namespace, container_name, check_alive_cmd)
             if "PID" not in stdout_check:
                 logger.info(f"PID {p_pid} confirmed terminated in {container_name}")
                 process_terminated_count += 1
@@ -195,7 +196,8 @@ def main():
             config.load_kube_config(config_file=kube_config)
         else:
             config.load_incluster_config()
-        core_v1 = client.CoreV1Api()
+        api_client = client.ApiClient()
+        core_v1 = client.CoreV1Api(api_client)
         logger.info("Kubernetes client initialized")
     except Exception as e:
         logger.error(f"Failed to initialize Kubernetes client: {e}")
@@ -286,7 +288,7 @@ def main():
         logger.info(f"Starting process termination experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid}" + 
                     (f" - {container_id_prefix}" if container_id_prefix else "") + 
                     (f" - {process_pattern}" if process_pattern else "") + ")")
-        process_terminated_count = find_and_terminate_process(core_v1, target_pod_info, target_container_names, pod_uid, container_id_prefix, process_pattern)
+        process_terminated_count = find_and_terminate_process(api_client, target_pod_info, target_container_names, pod_uid, container_id_prefix, process_pattern)
     except Exception as e:
         logger.error(f"An unexpected error occurred while terminating process(es): {e}")
         if kafka_prod and kafka_prod.connected:

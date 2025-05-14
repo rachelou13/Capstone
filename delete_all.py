@@ -1,6 +1,4 @@
-import os
 import subprocess
-import sys
 import time
 import logging
 
@@ -40,7 +38,7 @@ def delete_resources():
 def stop_metrics_scraper():
     try:
         print("Stopping metrics-scraper deployment...")
-        # Scale down the deployment to 0 replicas
+        #Scale down the deployment to 0 replicas
         result = subprocess.run(
             ["kubectl", "scale", "deployment", "metrics-scraper", "--replicas=0"],
             capture_output=True,

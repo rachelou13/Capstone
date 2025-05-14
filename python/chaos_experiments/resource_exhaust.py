@@ -11,10 +11,11 @@ from python.utils.kafka_producer import CapstoneKafkaProducer
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def exec_command_in_pod(api, pod_name, namespace, container_name, duration, command_list):
+def exec_command_in_pod(api_client, pod_name, namespace, container_name, duration, command_list):
     try:
+        core_v1 = client.CoreV1Api(api_client)
         logger.debug(f"Executing in {namespace}/{pod_name}/{container_name}: {command_list}")
-        resp = stream(api.connect_get_namespaced_pod_exec,
+        resp = stream(core_v1.connect_get_namespaced_pod_exec,
                       pod_name,
                       namespace,
                       container=container_name,
@@ -33,7 +34,7 @@ def exec_command_in_pod(api, pod_name, namespace, container_name, duration, comm
         logger.error(f"Unexpected error executing command in {namespace}/{pod_name}/{container_name}: {e}")
         return None, str(e), 1
 
-def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
+def cpu_stress_in_pod(api_client, pod_info, container_names, num_cores, duration):
     cpu_stress_test_success = False
     pod_name = pod_info['name']
     namespace = pod_info['namespace']
@@ -72,7 +73,7 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
             '/bin/sh', '-c', command_string
         ]
         
-        stdout, stderr, exit_code = exec_command_in_pod(api, pod_name, namespace, container_name, duration + 30, command_list=cpu_stress_cmd_list)
+        stdout, stderr, exit_code = exec_command_in_pod(api_client, pod_name, namespace, container_name, duration + 30, command_list=cpu_stress_cmd_list)
         
         if exit_code == 0:
             logger.info(f"CPU stress command completed in {namespace}/{pod_name}/{container_name}. Verifying cleanup...")
@@ -83,7 +84,7 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
                 '-c', 
                 f"[ -f {background_pids_file} ] && echo 'PID file still exists' || echo 'PID file removed'"
             ]
-            verify_stdout, verify_stderr, verify_exit = exec_command_in_pod(api, pod_name, namespace, container_name, 10, command_list=verify_command)
+            verify_stdout, verify_stderr, verify_exit = exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=verify_command)
             
             if verify_exit == 0 and "PID file removed" in verify_stdout:
                 logger.info(f"Cleanup verified in {container_name} - PID file successfully removed")
@@ -96,7 +97,7 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
                     '-c',
                     f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'"
                 ]
-                exec_command_in_pod(api, pod_name, namespace, container_name, 10, command_list=final_cleanup)
+                exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=final_cleanup)
                 cpu_stress_test_success = True
         else:
             logger.error(f"CPU stress command failed in {namespace}/{pod_name}/{container_name}. Exit code: {exit_code}, Stderr: {stderr}")
@@ -106,7 +107,7 @@ def cpu_stress_in_pod(api, pod_info, container_names, num_cores, duration):
                 '-c',
                 f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'"
             ]
-            exec_command_in_pod(api, pod_name, namespace, container_name, 10, command_list=emergency_cleanup)
+            exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=emergency_cleanup)
             cpu_stress_test_success = False
             break
             
@@ -172,7 +173,8 @@ def main():
             config.load_kube_config(config_file=kube_config)
         else:
             config.load_incluster_config()
-        core_v1 = client.CoreV1Api()
+        api_client = client.ApiClient()
+        core_v1 = client.CoreV1Api(api_client)
         logger.info("Kubernetes client initialized")
     except Exception as e:
         logger.error(f"Failed to initialize Kubernetes client: {e}")
@@ -256,7 +258,7 @@ def main():
     #Execute experiment
     try:
         logger.info(f"Starting resource exhaustion experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid})")
-        cpu_stress_test_success = cpu_stress_in_pod(core_v1, target_pod_info, target_container_names, num_cores, duration)
+        cpu_stress_test_success = cpu_stress_in_pod(api_client, target_pod_info, target_container_names, num_cores, duration)
     except Exception as e:
         logger.error(f"Unexpected error occurred while running load on CPU(s): {e}")
         if kafka_prod and kafka_prod.connected:

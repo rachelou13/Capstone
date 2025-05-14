@@ -14,6 +14,7 @@ def display_menu():
     print("Available experiments: ")
     print("1. Process Termination")
     print("2. Resource Exhaustion (CPU stress test)")
+    print("3. Network Partition")
     print("0. Exit")
 
 def get_k8s_client():
@@ -99,6 +100,64 @@ def select_pod(k8s_client):
                 print("Invalid selection. Please try again.")
         except ValueError:
             print("Please enter a valid number.")
+
+def run_network_partition(pod_info):
+    print("\n" + title_separator + " NETWORK PARTITION EXPERIMENT " + title_separator)
+    print("Parameters (press Enter to use default):")
+    
+    #Get target host
+    target_host = input("Target host to block [default: mysql-primary]: ").strip()
+    target_host = target_host if target_host else "mysql-primary"
+    
+    #Get port
+    port = input("Port to block [default: 3306]: ").strip()
+    port = port if port else "3306"
+    
+    #Get protocol
+    protocol = input("Protocol (tcp/udp/icmp) [default: tcp]: ").strip().lower()
+    protocol = protocol if protocol in ["tcp", "udp", "icmp"] else "tcp"
+    
+    #Get direction
+    direction = input("Direction (outbound/inbound/both) [default: outbound]: ").strip().lower()
+    direction = direction if direction in ["outbound", "inbound", "both"] else "outbound"
+    
+    #Get duration
+    duration = input("Duration in seconds [default: 15]: ").strip()
+    duration = duration if duration else "15"
+    
+    print("\nRunning Network Partition experiment with the following parameters:")
+    print(f"Pod: {pod_info['namespace']}/{pod_info['name']}")
+    print(f"UID: {pod_info['uid']}")
+    print(f"Target Host: {target_host}")
+    print(f"Port: {port}")
+    print(f"Protocol: {protocol}")
+    print(f"Direction: {direction}")
+    print(f"Duration: {duration} seconds")
+    
+    confirm = input("\nExecute experiment? (y/n): ").strip().lower()
+    if confirm != 'y':
+        return
+    
+    cmd = [
+        sys.executable, "-m", "python.chaos_experiments.network_partition",
+        "-u", pod_info['uid'],
+        "-t", target_host,
+        "-p", port,
+        "-pr", protocol,
+        "-dir", direction,
+        "-d", duration
+    ]
+    
+    try:
+        print("\nExecuting experiment...")
+        subprocess.run(cmd, check=True)
+        print("\nExperiment completed successfully!")
+    except subprocess.CalledProcessError as e:
+        print(f"\nError running experiment: {e}")
+    except Exception as e:
+        print(f"\nUnexpected error: {e}")
+    
+    input("\nPress Enter to continue...")
 
 def run_resource_exhaustion(pod_info):
     print("\n" + title_separator + " RESOURCE EXHAUSTION EXPERIMENT " + title_separator  + "\n")
@@ -197,7 +256,7 @@ def main():
             print("\nExiting. Goodbye!")
             break
         
-        if choice not in ["1", "2"]:
+        if choice not in ["1", "2", "3"]:
             print("\nInvalid choice. Please try again.")
             input("Press Enter to continue...")
             continue
@@ -212,6 +271,8 @@ def main():
             run_process_termination(pod_info)
         elif choice == "2":
             run_resource_exhaustion(pod_info)
+        elif choice == "3":
+            run_network_partition(pod_info)
 
 if __name__ == "__main__":
     main()

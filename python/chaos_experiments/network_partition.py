@@ -1,42 +1,264 @@
+import os
 import logging
 import argparse
 import uuid
 from datetime import datetime, timezone
 import threading
+import time
+import yaml
+
 
 from kubernetes import client, config
-from kubernetes.stream import stream
+from kubernetes.client.rest import ApiException
 
 from python.utils.kafka_producer import CapstoneKafkaProducer
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-def exec_command_in_pod(api, pod_name, namespace, container_name, command_list):
+    
+def apply_network_policy(api_client, pod_info, target_host, direction):
+    pod_name = pod_info['name']
+    namespace = pod_info['namespace']
+    policy_name = f"chaos-network-partition-{uuid.uuid4().hex[:8]}"
+    
+    #Get pod labels to use as selector
+    core_v1 = client.CoreV1Api(api_client)
+    pod = core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
+    pod_labels = pod.metadata.labels or {}
+    
+    if not pod_labels:
+        logger.error(f"Pod {namespace}/{pod_name} has no labels. Cannot create NetworkPolicy.")
+        return False, None
+    
+    #Create NetworkPolicy based on direction
+    policy = {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "NetworkPolicy",
+        "metadata": {
+            "name": policy_name,
+            "namespace": namespace
+        },
+        "spec": {
+            "podSelector": {
+                "matchLabels": pod_labels
+            },
+            "policyTypes": []
+        }
+    }
+    
+    #Handle outbound traffic
+    if direction in ["outbound", "both"]:
+        policy["spec"]["policyTypes"].append("Egress")
+        
+        #Set up egress rules - allow all other traffic
+        policy["spec"]["egress"] = [
+            #Allow DNS
+            {
+                "to": [],
+                "ports": [
+                    {"port": 53, "protocol": "UDP"}
+                ]
+            },
+            #Block specific target
+            {
+                "to": [
+                    {"ipBlock": {"cidr": "0.0.0.0/0", "except": [target_host]}}
+                ]
+            }
+        ]
+    
+    #Handle inbound traffic
+    if direction in ["inbound", "both"]:
+        policy["spec"]["policyTypes"].append("Ingress")
+        
+        #Set up ingress rules - deny from target but allow all other traffic
+        policy["spec"]["ingress"] = [
+            {
+                "from": [
+                    {"ipBlock": {"cidr": "0.0.0.0/0", "except": [target_host]}}
+                ]
+            }
+        ]
+    
+    #Apply the NetworkPolicy
     try:
-        logger.debug(f"Executing in {namespace}/{pod_name}/{container_name}: {command_list}")
-        resp = stream(api.connect_get_namespaced_pod_exec,
-                      pod_name,
-                      namespace,
-                      container=container_name,
-                      command=command_list,
-                      stderr=True, stdin=False,
-                      stdout=True, tty=False,
-                      _request_timeout=60)
+        networking_v1 = client.NetworkingV1Api(api_client)
+        networking_v1.create_namespaced_network_policy(namespace=namespace, body=policy)
+        logger.info(f"Created NetworkPolicy {policy_name} in namespace {namespace}")
+        return True, policy_name
+    except ApiException as e:
+        logger.error(f"Failed to create NetworkPolicy: {e}")
+        return False, None
+    
+def remove_network_policy(api_client, namespace, policy_name):
+    if not policy_name:
+        logger.warning("No NetworkPolicy name provided for removal")
+        return False
+    
+    try:
+        networking_v1 = client.NetworkingV1Api(api_client)
+        networking_v1.delete_namespaced_network_policy(name=policy_name, namespace=namespace)
+        logger.info(f"Removed NetworkPolicy {policy_name} from namespace {namespace}")
+        return True
+    except ApiException as e:
+        logger.error(f"Failed to remove NetworkPolicy {policy_name}: {e}")
+        return False
 
-        stdout = resp.strip() if resp else ""
-        logger.debug(f"Exec stdout for '{command_list[0]}':\n{stdout[:200]}...")
-        return stdout, "", 0
-    except client.exceptions.ApiException as e:
-        logger.error(f"ApiException when executing command in {namespace}/{pod_name}/{container_name}: {e.reason} - {e.body}")
-        return None, str(e.body), 1
-    except Exception as e:
-        error_message = str(e)
-        if "permission denied" in error_message.lower():
-            logger.error(f"Permission denied when executing iptables command in {namespace}/{pod_name}/{container_name}. Container may need privileged mode.")
+def validate_connectivity(api_client, pod_info, target_host, port, expected_failure=False):
+    pod_name = pod_info['name']
+    namespace = pod_info['namespace']
+    core_v1 = client.CoreV1Api(api_client)
+    
+    #Path to test_connectivity.py script in project
+    local_script_path = os.path.join(os.path.dirname(__file__), "test_connectivity.py")
+    
+    try:
+        #Check if the script file exists
+        if not os.path.exists(local_script_path):
+            logger.error(f"Connectivity test script not found at {local_script_path}")
+            
+            #Fall back if file path doesn't exist
+            logger.info("Falling back to direct connectivity test")
+            fallback_cmd = [
+                "/bin/sh", "-c", 
+                f"echo 'Testing connection to {target_host}:{port}' && " +
+                f"(timeout 5 bash -c 'exec 3<>/dev/tcp/{target_host}/{port}' && " +
+                f"echo 'CONNECTION_RESULT: SUCCESS' || echo 'CONNECTION_RESULT: FAILED')"
+            ]
+            
+            resp = core_v1.connect_get_namespaced_pod_exec(
+                name=pod_name,
+                namespace=namespace,
+                command=fallback_cmd,
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+                _request_timeout=10
+            )
+            
+            connection_succeeded = "CONNECTION_RESULT: SUCCESS" in resp
+            connection_failed = "CONNECTION_RESULT: FAILED" in resp
+            
+            # Evaluate results
+            if expected_failure and connection_succeeded:
+                logger.warning(f"Connection to {target_host}:{port} succeeded but should have failed")
+                return False
+            elif not expected_failure and connection_failed:
+                logger.warning(f"Connection to {target_host}:{port} failed but should have succeeded")
+                return False
+            elif connection_succeeded or connection_failed:
+                return True
+            else:
+                logger.warning(f"Connectivity test gave unclear result: {resp}")
+                return False
+            
+        #If file path exists, open and read
+        with open(local_script_path, 'r') as f:
+            script_content = f.read()
+        
+        #Copy the script to the pod
+        temp_path = "/tmp/test_connectivity.py"
+        copy_cmd = [
+            "/bin/sh", 
+            "-c", 
+            f"cat > {temp_path} << 'EOL'\n{script_content}\nEOL\nchmod +x {temp_path}"
+        ]
+
+        logger.debug(f"Copying connectivity test script to {pod_name}")
+        core_v1.connect_get_namespaced_pod_exec(
+            name=pod_name,
+            namespace=namespace,
+            command=copy_cmd,
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False
+        )
+        
+        #Run the test
+        test_cmd = ["python3", temp_path, target_host, str(port), "5"]
+        
+        logger.debug(f"Running connectivity test to {target_host}:{port}")
+        resp = core_v1.connect_get_namespaced_pod_exec(
+            name=pod_name,
+            namespace=namespace,
+            command=test_cmd,
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False,
+            _request_timeout=10
+        )
+        
+        logger.debug(f"Connection test output: {resp}")
+        connection_succeeded = "CONNECTION_RESULT: SUCCESS" in resp
+        connection_failed = "CONNECTION_RESULT: FAILED" in resp
+        
+        #Fallback if python3 is not available
+        if not connection_succeeded and not connection_failed:
+            logger.warning("Python test script failed, trying fallback method")
+            fallback_cmd = [
+                "/bin/sh", "-c", 
+                f"echo 'Testing connection to {target_host}:{port}' && " +
+                f"(timeout 5 bash -c 'exec 3<>/dev/tcp/{target_host}/{port}' && " +
+                f"echo 'CONNECTION_RESULT: SUCCESS' || echo 'CONNECTION_RESULT: FAILED')"
+            ]
+            
+            resp = core_v1.connect_get_namespaced_pod_exec(
+                name=pod_name,
+                namespace=namespace,
+                command=fallback_cmd,
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+                _request_timeout=10
+            )
+            
+            connection_succeeded = "CONNECTION_RESULT: SUCCESS" in resp
+            connection_failed = "CONNECTION_RESULT: FAILED" in resp
+        
+        #Clean up
+        core_v1.connect_get_namespaced_pod_exec(
+            name=pod_name,
+            namespace=namespace,
+            command=["/bin/sh", "-c", f"rm -f {temp_path}"],
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False
+        )
+        
+        #Check results
+        if expected_failure and connection_succeeded:
+            logger.warning(f"Connection to {target_host}:{port} succeeded but should have failed")
+            return False
+        elif not expected_failure and connection_failed:
+            logger.warning(f"Connection to {target_host}:{port} failed but should have succeeded")
+            return False
+        elif connection_succeeded or connection_failed:
+            return True
         else:
-            logger.error(f"Unexpected error executing command in {namespace}/{pod_name}/{container_name}: {e}")
-        return None, error_message, 1
+            logger.warning(f"Connectivity test gave unclear result: {resp}")
+            return False
+    except Exception as e:
+        logger.error(f"Error validating connectivity: {e}")
+        return False
+    
+def setup_timeout(api_client, target_pod_info, policy_name, duration):
+    
+    def timeout_callback():
+        logger.info(f"Timeout reached after {duration}s, removing NetworkPolicy")
+        try:
+            remove_network_policy(api_client, target_pod_info['namespace'], policy_name)
+        except Exception as e:
+            logger.error(f"Error during automatic policy removal: {e}")
+
+    timer = threading.Timer(duration, timeout_callback)
+    timer.daemon = True
+    timer.start()
+    return timer
 
 def main():
      #Parse args from command line
@@ -123,7 +345,7 @@ def main():
     rollback_successful = False
     partition_validated = None
     rollback_validated = None
-    rules_applied = 0
+    policy_name = None
 
     #K8s client setup
     try:
@@ -131,7 +353,8 @@ def main():
             config.load_kube_config(config_file=kube_config)
         else:
             config.load_incluster_config()
-        core_v1 = client.CoreV1Api()
+        api_client = client.ApiClient()
+        core_v1 = client.CoreV1Api(api_client)
         logger.info("Kubernetes client initialized")
     except Exception as e:
         logger.error(f"Failed to initialize Kubernetes client: {e}")
@@ -143,7 +366,6 @@ def main():
                 "source": "network_partition", 
                 "error": f"K8s client init failed: {e}"
              }
-
             kafka_prod.send_event(k8s_fail_event, experiment_id)
         return
     
@@ -217,8 +439,50 @@ def main():
 
     #Execute the experiment
     try:
-        #Put call to apply_iptables_rules here
-        pass
+        logger.info(f"Starting network partition experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid})")
+        partition_successful, policy_name = apply_network_policy(api_client, target_pod_info, target_host, direction)
+
+        if partition_successful:
+            logger.info(f"Network partition successfully created with policy {policy_name}")
+            
+            #Wait for policy to take effect
+            time.sleep(3)
+            
+            #Validate partition was effective
+            if target_host and port:
+                logger.info(f"Validating connectivity to {target_host}:{port}")
+                partition_validated = validate_connectivity(
+                    api_client, target_pod_info, target_host, port, expected_failure=True
+                )
+                logger.info(f"Partition validation {'succeeded' if partition_validated else 'failed'}")
+            
+            #Set up timeout for automatic policy removal
+            timer = setup_timeout(api_client, target_pod_info, policy_name, duration)
+            
+            #Wait for specified duration
+            logger.info(f"Maintaining network partition for {duration}s")
+            time.sleep(duration)
+            
+            #Cancel timer if we reached here without timeout
+            timer.cancel()
+            
+            #Remove NetworkPolicy
+            logger.info("Removing NetworkPolicy to restore connectivity")
+            rollback_successful = remove_network_policy(api_client, target_pod_info['namespace'], policy_name)
+            
+            #Wait for policy removal
+            time.sleep(3)
+            
+            # Validate rollback was effective (optional)
+            if target_host and port:
+                logger.info(f"Validating connectivity to {target_host}:{port} after rollback")
+                rollback_validated = validate_connectivity(
+                    api_client, target_pod_info, target_host, port, expected_failure=False
+                )
+                logger.info(f"Rollback validation {'succeeded' if rollback_validated else 'failed'}")
+        else:
+            logger.error("Failed to create network partition")
+
     except Exception as e:
         logger.error(f"Unexpected error occurred while blocking network traffic: {e}")
         if kafka_prod and kafka_prod.connected:
@@ -232,6 +496,14 @@ def main():
                 "error": f"Process termination failed: {e}"
             }
             kafka_prod.send_event(error_event, experiment_id)
+
+        #Attempt emergency rollback if policy was created
+        if policy_name:
+            logger.info("Attempting emergency rollback by removing NetworkPolicy")
+            try:
+                remove_network_policy(api_client, target_pod_info['namespace'], policy_name)
+            except Exception as rollback_error:
+                logger.error(f"Emergency rollback failed: {rollback_error}")
     
     #Ensure end event is always sent, kafka producer is always closed
     finally:
@@ -249,7 +521,7 @@ def main():
             "details": {
                 "partition_validated": partition_validated,
                 "rollback_validated": rollback_validated,
-                "rules_applied": rules_applied
+                "policy_name": policy_name
             },
             "duration": duration
         }
