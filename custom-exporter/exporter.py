@@ -28,6 +28,13 @@ def metrics():
             lines.append(f'infra_avg_mem_percent {row["avg_mem"] or 0:.2f}')
             lines.append(f'infra_metric_total_scrapes {row["total"] or 0}')
 
+        # Latest experiment detected
+        cursor.execute("SELECT experiment_detected FROM infra_metrics ORDER BY timestamp DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            is_running = int(row["experiment_detected"])
+            lines.append(f'chaos_experiment_running {is_running}')
+
         # Raw metrics
         cursor.execute("SELECT * FROM infra_metrics WHERE metric_level = 'node' ORDER BY timestamp DESC LIMIT 1")
         for row in cursor.fetchall():
@@ -63,6 +70,25 @@ def metrics():
         # Count total chaos events
         total_chaos = collection.count_documents({}, maxTimeMS=2000)
         lines.append(f'chaos_events_total {total_chaos}')
+
+        # Count chaos events by event_type
+        pipeline = [{"$group": {"_id": "$event_type", "count": {"$sum": 1}}}]
+        for doc in collection.aggregate(pipeline):
+            event_type = doc["_id"]
+            count = doc["count"]
+            lines.append(f'chaos_event_count{{event_type="{event_type}"}} {count}')
+        
+        # Time since last chaos event
+        from datetime import datetime, timezone
+
+        latest_event = collection.find_one({"event_type": "start"}, sort=[("timestamp", -1)])
+        if latest_event and "timestamp" in latest_event:
+            last_ts = latest_event["timestamp"]
+            if isinstance(last_ts, str):
+                last_ts = datetime.fromisoformat(last_ts)
+            seconds_since = (datetime.now(timezone.utc) - last_ts).total_seconds()
+            lines.append(f'seconds_since_last_chaos_event {seconds_since:.0f}')
+
     except Exception as e:
         lines.append(f'# MongoDB error: {str(e)}')
 
