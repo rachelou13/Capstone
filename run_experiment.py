@@ -117,13 +117,13 @@ def run_network_partition(pod_info):
     protocol = input("Protocol (tcp/udp/icmp) [default: tcp]: ").strip().lower()
     protocol = protocol if protocol in ["tcp", "udp", "icmp"] else "tcp"
     
-    #Get direction
-    direction = input("Direction (outbound/inbound/both) [default: outbound]: ").strip().lower()
-    direction = direction if direction in ["outbound", "inbound", "both"] else "outbound"
-    
     #Get duration
-    duration = input("Duration in seconds [default: 15]: ").strip()
-    duration = duration if duration else "15"
+    duration = input("Duration in seconds [default: 30]: ").strip()
+    duration = duration if duration else "30"
+
+    #Validate MySQL failover
+    validate_failover = input("Validate MySQL failover? (y/n) [default: y]: ").strip().lower()
+    validate_failover = validate_failover != 'n'
     
     print("\nRunning Network Partition experiment with the following parameters:")
     print(f"Pod: {pod_info['namespace']}/{pod_info['name']}")
@@ -131,8 +131,8 @@ def run_network_partition(pod_info):
     print(f"Target Service: {target_service}")
     print(f"Port: {port}")
     print(f"Protocol: {protocol}")
-    print(f"Direction: {direction}")
     print(f"Duration: {duration} seconds")
+    print(f"Validate Failover: {'Yes' if validate_failover else 'No'}")
     
     confirm = input("\nExecute experiment? (y/n): ").strip().lower()
     if confirm != 'y':
@@ -144,9 +144,11 @@ def run_network_partition(pod_info):
         "-ts", target_service,
         "-p", port,
         "-pr", protocol,
-        "-dir", direction,
         "-d", duration
     ]
+
+    if validate_failover:
+        cmd.append("-v")
     
     try:
         print("\nExecuting experiment...")

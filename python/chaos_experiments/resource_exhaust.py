@@ -70,7 +70,7 @@ def cpu_stress_in_pod(api_client, pod_info, container_names, num_cores, duration
         )
         
         cpu_stress_cmd_list = [
-            '/bin/sh', '-c', command_string
+            'sh', '-c', command_string
         ]
         
         stdout, stderr, exit_code = exec_command_in_pod(api_client, pod_name, namespace, container_name, duration + 30, command_list=cpu_stress_cmd_list)
@@ -80,7 +80,7 @@ def cpu_stress_in_pod(api_client, pod_info, container_names, num_cores, duration
             
             #Check if PID file still exists
             verify_command = [
-                '/bin/sh', 
+                'sh', 
                 '-c', 
                 f"[ -f {background_pids_file} ] && echo 'PID file still exists' || echo 'PID file removed'"
             ]
@@ -93,7 +93,7 @@ def cpu_stress_in_pod(api_client, pod_info, container_names, num_cores, duration
                 logger.warning(f"Cleanup may not be complete in {container_name}: {verify_stdout}")
                 #Try one more cleanup
                 final_cleanup = [
-                    '/bin/sh',
+                    'sh',
                     '-c',
                     f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'"
                 ]
@@ -103,7 +103,7 @@ def cpu_stress_in_pod(api_client, pod_info, container_names, num_cores, duration
             logger.error(f"CPU stress command failed in {namespace}/{pod_name}/{container_name}. Exit code: {exit_code}, Stderr: {stderr}")
             #Try emergency cleanup
             emergency_cleanup = [
-                '/bin/sh',
+                'sh',
                 '-c',
                 f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'"
             ]

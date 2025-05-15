@@ -16,14 +16,16 @@ spec:
     spec:
       containers:
         - name: python-proxy-container
-          image: lukasmccain0/capstone-app:latest
+          image: henrose/python-proxy-app:latest
           imagePullPolicy: Always 
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+              - NET_ADMIN
           ports:
             - name: tcp-proxy
               containerPort: 3307
-          envFrom:
-            - configMapRef:
-                name: app-config
           env:
             - name: DB_USERNAME
               valueFrom:

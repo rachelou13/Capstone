@@ -49,16 +49,14 @@ def find_and_terminate_process(api_client, pod_info, container_names, pod_uid, c
     namespace = pod_info['namespace']
 
     list_proc_cmd = [
-        '/bin/sh', '-c',
+        'sh', '-c',
         "find /proc -maxdepth 1 -type d -name '[0-9]*' | "
-        "while IFS= read -r pid_dir; do "
+        "while read -r pid_dir; do "
         "  if [ -z \"$pid_dir\" ]; then continue; fi; "
         "  pid=$(basename \"$pid_dir\"); "
-        "  name=$(cat \"$pid_dir/status\" 2>/dev/null | grep '^Name:' | cut -f2-); "
-        "  cmdline_raw=$(cat \"$pid_dir/cmdline\" 2>/dev/null); "
-        "  cmdline_spaces=$(echo \"$cmdline_raw\" | tr '\\0' ' '); "
-        "  cmdline_trimmed=$(echo \"$cmdline_spaces\" | sed 's/[[:space:]]*$//'); "
-        "  printf '%s\\t%s\\t%s\\n' \"$pid\" \"$name\" \"$cmdline_trimmed\"; "
+        "  name=$(cat \"$pid_dir/status\" 2>/dev/null | grep '^Name:' | cut -f2- | tr -d '[:space:]'); "
+        "  cmdline=$(cat \"$pid_dir/cmdline\" 2>/dev/null | tr '\\0' ' ' | sed 's/[[:space:]]*$//'); "
+        "  echo \"${pid}	${name}	${cmdline}\"; "
         "done"
     ]
     
@@ -118,8 +116,8 @@ def find_and_terminate_process(api_client, pod_info, container_names, pod_uid, c
 
             logger.info(f"Target match: PID {p_pid} ({p_name}) in {namespace}/{pod_name}/{container_name} - attempting to terminate")
 
-            #Send kill command
-            kill_cmd = ['kill', str(p_pid)]
+            #Send kill command, -9 forces immediate termination with graceful shutdown
+            kill_cmd = ['kill', '-9', str(p_pid)]
             _, stderr_kill, _ = exec_command_in_pod(api_client, pod_name, namespace, container_name, kill_cmd)
             if stderr_kill and "No such process" not in stderr_kill:
                 logger.warning(f"Error sending SIGTERM to PID {p_pid} in {container_name}: {stderr_kill}")
