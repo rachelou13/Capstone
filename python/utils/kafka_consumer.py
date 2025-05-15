@@ -159,7 +159,6 @@ def main():
             try:
                 ts = value.get("timestamp")
                 source = value.get("source", "infra_metrics_scraper")
-                experiment_detected = value.get("experiment_detected", False)
                 metrics = value.get("metrics", {})
                 node_metrics = metrics.get("node", {})
                 container_metrics = metrics.get("containers", {})
@@ -170,13 +169,13 @@ def main():
 
                 node_query = """
                 INSERT INTO infra_metrics (
-                    timestamp, source, experiment_detected,
+                    timestamp, source,
                     cpu_percent, cpu_used, mem_percent, mem_used,
                     node_name, pod_name, pod_namespace, container_name, metric_level
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 mysql_cursor.execute(node_query, (
-                    ts, source, experiment_detected,
+                    ts, source,
                     node_metrics.get("cpu_usage", {}).get("percent", 0.0),
                     node_metrics.get("cpu_usage", {}).get("used", 0.0),
                     node_metrics.get("memory_usage", {}).get("percent", 0.0),
@@ -187,14 +186,14 @@ def main():
                 if container_metrics:
                     container_query = """
                     INSERT INTO infra_metrics (
-                        timestamp, source, experiment_detected,
+                        timestamp, source,
                         cpu_percent, cpu_used, mem_percent, mem_used,
                         node_name, pod_name, pod_namespace, container_name, metric_level
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """
                     for cname, cdata in container_metrics.items():
                         mysql_cursor.execute(container_query, (
-                            ts, source, experiment_detected,
+                            ts, source,
                             cdata.get("cpu_usage", {}).get("percent"),
                             cdata.get("cpu_usage", {}).get("used"),
                             cdata.get("memory_usage", {}).get("percent"),
