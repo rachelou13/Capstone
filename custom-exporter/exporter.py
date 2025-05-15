@@ -3,6 +3,8 @@ import mysql.connector
 from pymongo import MongoClient
 import os
 
+from datetime import datetime, timezone
+
 app = Flask(__name__)
 
 @app.route("/metrics")
@@ -27,13 +29,6 @@ def metrics():
             lines.append(f'infra_avg_cpu_percent {row["avg_cpu"] or 0:.2f}')
             lines.append(f'infra_avg_mem_percent {row["avg_mem"] or 0:.2f}')
             lines.append(f'infra_metric_total_scrapes {row["total"] or 0}')
-
-        # Latest experiment detected
-        cursor.execute("SELECT experiment_detected FROM infra_metrics ORDER BY timestamp DESC LIMIT 1")
-        row = cursor.fetchone()
-        if row:
-            is_running = int(row["experiment_detected"])
-            lines.append(f'chaos_experiment_running {is_running}')
 
         # Raw metrics
         cursor.execute("SELECT * FROM infra_metrics WHERE metric_level = 'node' ORDER BY timestamp DESC LIMIT 1")
@@ -84,21 +79,28 @@ def metrics():
         pipeline = [
             {"$match": {"event_type": "start"}},
             {"$group": {"_id": "$source", "count": {"$sum": 1}}}
-            ]
+        ]
         for doc in chaos_collection.aggregate(pipeline):
             chaos_type = doc["_id"]
             count = doc["count"]
             lines.append(f'chaos_events_total_by_type{{chaos_type="{chaos_type}"}} {count}')
 
-        # Time since last chaos event
-        from datetime import datetime, timezone
-        latest_event = chaos_collection.find_one({"event_type": "start"}, sort=[("timestamp", -1)])
-        if latest_event and "timestamp" in latest_event:
-            last_ts = latest_event["timestamp"]
+        # Time since last chaos event (start only)
+        latest_start = chaos_collection.find_one({"event_type": "start"}, sort=[("timestamp", -1)])
+        if latest_start and "timestamp" in latest_start:
+            last_ts = latest_start["timestamp"]
             if isinstance(last_ts, str):
                 last_ts = datetime.fromisoformat(last_ts)
             seconds_since = (datetime.now(timezone.utc) - last_ts).total_seconds()
             lines.append(f'seconds_since_last_chaos_event {seconds_since:.0f}')
+
+        # 👇 NEW: Most recent chaos event to determine if experiment is running
+        latest_event = chaos_collection.find_one(
+            {"event_type": {"$in": ["start", "end"]}},
+            sort=[("timestamp", -1)]
+        )
+        is_running = 1 if latest_event and latest_event.get("event_type") == "start" else 0
+        lines.append(f'chaos_experiment_running {is_running}')
 
         # PROXY LOGS
         proxy_collection = db["proxy_logs"]
