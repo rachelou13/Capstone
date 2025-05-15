@@ -61,33 +61,50 @@ def metrics():
     except Exception as e:
         lines.append(f'# MySQL error: {str(e)}')
 
-    # === MongoDB: chaos_events ===
+    # === MongoDB: chaos_events + proxy_logs ===
     try:
         mongo_client = MongoClient("mongodb://root:root@mongodb-service:27017/", serverSelectionTimeoutMS=3000)
         db = mongo_client["metrics_db"]
-        collection = db["chaos_events"]
+
+        # CHAOS EVENTS
+        chaos_collection = db["chaos_events"]
 
         # Count total chaos events
-        total_chaos = collection.count_documents({}, maxTimeMS=2000)
+        total_chaos = chaos_collection.count_documents({}, maxTimeMS=2000)
         lines.append(f'chaos_events_total {total_chaos}')
 
         # Count chaos events by event_type
         pipeline = [{"$group": {"_id": "$event_type", "count": {"$sum": 1}}}]
-        for doc in collection.aggregate(pipeline):
+        for doc in chaos_collection.aggregate(pipeline):
             event_type = doc["_id"]
             count = doc["count"]
             lines.append(f'chaos_event_count{{event_type="{event_type}"}} {count}')
-        
+
+        # Count by chaos_type
+        pipeline = [
+            {"$match": {"event_type": "start"}},
+            {"$group": {"_id": "$source", "count": {"$sum": 1}}}
+            ]
+        for doc in chaos_collection.aggregate(pipeline):
+            chaos_type = doc["_id"]
+            count = doc["count"]
+            lines.append(f'chaos_events_total_by_type{{chaos_type="{chaos_type}"}} {count}')
+
         # Time since last chaos event
         from datetime import datetime, timezone
-
-        latest_event = collection.find_one({"event_type": "start"}, sort=[("timestamp", -1)])
+        latest_event = chaos_collection.find_one({"event_type": "start"}, sort=[("timestamp", -1)])
         if latest_event and "timestamp" in latest_event:
             last_ts = latest_event["timestamp"]
             if isinstance(last_ts, str):
                 last_ts = datetime.fromisoformat(last_ts)
             seconds_since = (datetime.now(timezone.utc) - last_ts).total_seconds()
             lines.append(f'seconds_since_last_chaos_event {seconds_since:.0f}')
+
+        # PROXY LOGS
+        proxy_collection = db["proxy_logs"]
+        for event in ["recv_failed", "broken_pipe", "connection_accepted"]:
+            count = proxy_collection.count_documents({"event": event})
+            lines.append(f'proxy_log_errors_total{{event="{event}"}} {count}')
 
     except Exception as e:
         lines.append(f'# MongoDB error: {str(e)}')

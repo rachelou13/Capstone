@@ -105,7 +105,7 @@ data:
     \         \"editorMode\": \"code\",\r\n          \"expr\": \"chaos_event_count\",\r\n
     \         \"legendFormat\": \"{{event_type}}\",\r\n          \"range\": true,\r\n
     \         \"refId\": \"A\"\r\n        }\r\n      ],\r\n      \"title\": \"Chaos
-    Events by Type\",\r\n      \"type\": \"bargauge\"\r\n    },\r\n    {\r\n      \"datasource\":
+    Events By Status\",\r\n      \"type\": \"bargauge\"\r\n    },\r\n    {\r\n      \"datasource\":
     {\r\n        \"type\": \"prometheus\",\r\n        \"uid\": \"PBFA97CFB590B2093\"\r\n
     \     },\r\n      \"fieldConfig\": {\r\n        \"defaults\": {\r\n          \"color\":
     {\r\n            \"mode\": \"thresholds\"\r\n          },\r\n          \"mappings\":
@@ -193,19 +193,87 @@ data:
     \           \"thresholdsStyle\": {\r\n              \"mode\": \"off\"\r\n            }\r\n
     \         },\r\n          \"mappings\": [],\r\n          \"thresholds\": {\r\n
     \           \"mode\": \"absolute\",\r\n            \"steps\": [\r\n              {\r\n
+    \               \"color\": \"green\"\r\n              }\r\n            ]\r\n          },\r\n
+    \         \"unit\": \"short\"\r\n        },\r\n        \"overrides\": []\r\n      },\r\n
+    \     \"gridPos\": {\r\n        \"h\": 8,\r\n        \"w\": 12,\r\n        \"x\":
+    0,\r\n        \"y\": 24\r\n      },\r\n      \"id\": 10,\r\n      \"options\":
+    {\r\n        \"legend\": {\r\n          \"calcs\": [],\r\n          \"displayMode\":
+    \"list\",\r\n          \"placement\": \"bottom\",\r\n          \"showLegend\":
+    true\r\n        },\r\n        \"tooltip\": {\r\n          \"hideZeros\": false,\r\n
+    \         \"mode\": \"single\",\r\n          \"sort\": \"none\"\r\n        }\r\n
+    \     },\r\n      \"pluginVersion\": \"12.0.0\",\r\n      \"targets\": [\r\n        {\r\n
+    \         \"editorMode\": \"code\",\r\n          \"expr\": \"rate(proxy_log_errors_total{event=~\\\"recv_failed|broken_pipe\\\"}[5m])\\r\\n\",\r\n
+    \         \"legendFormat\": \"{{event}}\",\r\n          \"range\": true,\r\n          \"refId\":
+    \"A\"\r\n        }\r\n      ],\r\n      \"title\": \"Rate of Proxy Errors\",\r\n
+    \     \"type\": \"timeseries\"\r\n    },\r\n    {\r\n      \"datasource\": {\r\n
+    \       \"type\": \"prometheus\",\r\n        \"uid\": \"PBFA97CFB590B2093\"\r\n
+    \     },\r\n      \"fieldConfig\": {\r\n        \"defaults\": {\r\n          \"color\":
+    {\r\n            \"mode\": \"palette-classic\"\r\n          },\r\n          \"custom\":
+    {\r\n            \"hideFrom\": {\r\n              \"legend\": false,\r\n              \"tooltip\":
+    false,\r\n              \"viz\": false\r\n            }\r\n          },\r\n          \"mappings\":
+    [],\r\n          \"unit\": \"short\"\r\n        },\r\n        \"overrides\": []\r\n
+    \     },\r\n      \"gridPos\": {\r\n        \"h\": 8,\r\n        \"w\": 12,\r\n
+    \       \"x\": 12,\r\n        \"y\": 24\r\n      },\r\n      \"id\": 9,\r\n      \"options\":
+    {\r\n        \"legend\": {\r\n          \"displayMode\": \"list\",\r\n          \"placement\":
+    \"bottom\",\r\n          \"showLegend\": true\r\n        },\r\n        \"pieType\":
+    \"pie\",\r\n        \"reduceOptions\": {\r\n          \"calcs\": [\r\n            \"lastNotNull\"\r\n
+    \         ],\r\n          \"fields\": \"\",\r\n          \"values\": false\r\n
+    \       },\r\n        \"tooltip\": {\r\n          \"hideZeros\": false,\r\n          \"mode\":
+    \"single\",\r\n          \"sort\": \"none\"\r\n        }\r\n      },\r\n      \"pluginVersion\":
+    \"12.0.0\",\r\n      \"targets\": [\r\n        {\r\n          \"editorMode\":
+    \"code\",\r\n          \"expr\": \"chaos_events_total_by_type\",\r\n          \"legendFormat\":
+    \"{{chaos_type}}\",\r\n          \"range\": true,\r\n          \"refId\": \"A\"\r\n
+    \       }\r\n      ],\r\n      \"title\": \"Chaos Events By Type\",\r\n      \"type\":
+    \"piechart\"\r\n    },\r\n    {\r\n      \"datasource\": {\r\n        \"type\":
+    \"prometheus\",\r\n        \"uid\": \"PBFA97CFB590B2093\"\r\n      },\r\n      \"fieldConfig\":
+    {\r\n        \"defaults\": {\r\n          \"color\": {\r\n            \"mode\":
+    \"thresholds\"\r\n          },\r\n          \"mappings\": [],\r\n          \"thresholds\":
+    {\r\n            \"mode\": \"absolute\",\r\n            \"steps\": [\r\n              {\r\n
+    \               \"color\": \"green\"\r\n              }\r\n            ]\r\n          },\r\n
+    \         \"unit\": \"short\"\r\n        },\r\n        \"overrides\": []\r\n      },\r\n
+    \     \"gridPos\": {\r\n        \"h\": 8,\r\n        \"w\": 12,\r\n        \"x\":
+    0,\r\n        \"y\": 32\r\n      },\r\n      \"id\": 11,\r\n      \"options\":
+    {\r\n        \"colorMode\": \"value\",\r\n        \"graphMode\": \"area\",\r\n
+    \       \"justifyMode\": \"auto\",\r\n        \"orientation\": \"auto\",\r\n        \"percentChangeColorMode\":
+    \"standard\",\r\n        \"reduceOptions\": {\r\n          \"calcs\": [\r\n            \"lastNotNull\"\r\n
+    \         ],\r\n          \"fields\": \"\",\r\n          \"values\": false\r\n
+    \       },\r\n        \"showPercentChange\": false,\r\n        \"textMode\": \"auto\",\r\n
+    \       \"wideLayout\": true\r\n      },\r\n      \"pluginVersion\": \"12.0.0\",\r\n
+    \     \"targets\": [\r\n        {\r\n          \"editorMode\": \"code\",\r\n          \"expr\":
+    \"proxy_log_errors_total{event=\\\"connection_accepted\\\"}\",\r\n          \"legendFormat\":
+    \"__auto\",\r\n          \"range\": true,\r\n          \"refId\": \"A\"\r\n        }\r\n
+    \     ],\r\n      \"title\": \"Total Proxy Connections\",\r\n      \"type\": \"stat\"\r\n
+    \   },\r\n    {\r\n      \"datasource\": {\r\n        \"type\": \"prometheus\",\r\n
+    \       \"uid\": \"PBFA97CFB590B2093\"\r\n      },\r\n      \"fieldConfig\": {\r\n
+    \       \"defaults\": {\r\n          \"color\": {\r\n            \"mode\": \"palette-classic\"\r\n
+    \         },\r\n          \"custom\": {\r\n            \"axisBorderShow\": false,\r\n
+    \           \"axisCenteredZero\": false,\r\n            \"axisColorMode\": \"text\",\r\n
+    \           \"axisLabel\": \"\",\r\n            \"axisPlacement\": \"auto\",\r\n
+    \           \"barAlignment\": 0,\r\n            \"barWidthFactor\": 0.6,\r\n            \"drawStyle\":
+    \"line\",\r\n            \"fillOpacity\": 0,\r\n            \"gradientMode\":
+    \"none\",\r\n            \"hideFrom\": {\r\n              \"legend\": false,\r\n
+    \             \"tooltip\": false,\r\n              \"viz\": false\r\n            },\r\n
+    \           \"insertNulls\": false,\r\n            \"lineInterpolation\": \"linear\",\r\n
+    \           \"lineWidth\": 1,\r\n            \"pointSize\": 5,\r\n            \"scaleDistribution\":
+    {\r\n              \"type\": \"linear\"\r\n            },\r\n            \"showPoints\":
+    \"auto\",\r\n            \"spanNulls\": false,\r\n            \"stacking\": {\r\n
+    \             \"group\": \"A\",\r\n              \"mode\": \"none\"\r\n            },\r\n
+    \           \"thresholdsStyle\": {\r\n              \"mode\": \"off\"\r\n            }\r\n
+    \         },\r\n          \"mappings\": [],\r\n          \"thresholds\": {\r\n
+    \           \"mode\": \"absolute\",\r\n            \"steps\": [\r\n              {\r\n
     \               \"color\": \"green\"\r\n              },\r\n              {\r\n
     \               \"color\": \"red\",\r\n                \"value\": 80\r\n              }\r\n
-    \           ]\r\n          },\r\n          \"unit\": \"Cores\"\r\n        },\r\n
+    \           ]\r\n          },\r\n          \"unit\": \"decgbytes\"\r\n        },\r\n
     \       \"overrides\": []\r\n      },\r\n      \"gridPos\": {\r\n        \"h\":
-    8,\r\n        \"w\": 12,\r\n        \"x\": 0,\r\n        \"y\": 24\r\n      },\r\n
-    \     \"id\": 3,\r\n      \"options\": {\r\n        \"legend\": {\r\n          \"calcs\":
+    8,\r\n        \"w\": 12,\r\n        \"x\": 12,\r\n        \"y\": 32\r\n      },\r\n
+    \     \"id\": 4,\r\n      \"options\": {\r\n        \"legend\": {\r\n          \"calcs\":
     [],\r\n          \"displayMode\": \"list\",\r\n          \"placement\": \"bottom\",\r\n
     \         \"showLegend\": true\r\n        },\r\n        \"tooltip\": {\r\n          \"hideZeros\":
     false,\r\n          \"mode\": \"single\",\r\n          \"sort\": \"none\"\r\n
     \       }\r\n      },\r\n      \"pluginVersion\": \"12.0.0\",\r\n      \"targets\":
-    [\r\n        {\r\n          \"editorMode\": \"code\",\r\n          \"expr\": \"infra_cpu_usage_absolute\",\r\n
+    [\r\n        {\r\n          \"editorMode\": \"code\",\r\n          \"expr\": \"infra_mem_usage_absolute\",\r\n
     \         \"legendFormat\": \"{{pod}}\",\r\n          \"range\": true,\r\n          \"refId\":
-    \"A\"\r\n        }\r\n      ],\r\n      \"title\": \"CPU Absolute Usage\",\r\n
+    \"A\"\r\n        }\r\n      ],\r\n      \"title\": \"Memory Absolute Usage\",\r\n
     \     \"type\": \"timeseries\"\r\n    },\r\n    {\r\n      \"datasource\": {\r\n
     \       \"type\": \"prometheus\",\r\n        \"uid\": \"PBFA97CFB590B2093\"\r\n
     \     },\r\n      \"fieldConfig\": {\r\n        \"defaults\": {\r\n          \"color\":
@@ -227,17 +295,17 @@ data:
     \           \"mode\": \"absolute\",\r\n            \"steps\": [\r\n              {\r\n
     \               \"color\": \"green\"\r\n              },\r\n              {\r\n
     \               \"color\": \"red\",\r\n                \"value\": 80\r\n              }\r\n
-    \           ]\r\n          },\r\n          \"unit\": \"decgbytes\"\r\n        },\r\n
+    \           ]\r\n          },\r\n          \"unit\": \"Cores\"\r\n        },\r\n
     \       \"overrides\": []\r\n      },\r\n      \"gridPos\": {\r\n        \"h\":
-    8,\r\n        \"w\": 12,\r\n        \"x\": 12,\r\n        \"y\": 24\r\n      },\r\n
-    \     \"id\": 4,\r\n      \"options\": {\r\n        \"legend\": {\r\n          \"calcs\":
+    8,\r\n        \"w\": 12,\r\n        \"x\": 0,\r\n        \"y\": 40\r\n      },\r\n
+    \     \"id\": 3,\r\n      \"options\": {\r\n        \"legend\": {\r\n          \"calcs\":
     [],\r\n          \"displayMode\": \"list\",\r\n          \"placement\": \"bottom\",\r\n
     \         \"showLegend\": true\r\n        },\r\n        \"tooltip\": {\r\n          \"hideZeros\":
     false,\r\n          \"mode\": \"single\",\r\n          \"sort\": \"none\"\r\n
     \       }\r\n      },\r\n      \"pluginVersion\": \"12.0.0\",\r\n      \"targets\":
-    [\r\n        {\r\n          \"editorMode\": \"code\",\r\n          \"expr\": \"infra_mem_usage_absolute\",\r\n
+    [\r\n        {\r\n          \"editorMode\": \"code\",\r\n          \"expr\": \"infra_cpu_usage_absolute\",\r\n
     \         \"legendFormat\": \"{{pod}}\",\r\n          \"range\": true,\r\n          \"refId\":
-    \"A\"\r\n        }\r\n      ],\r\n      \"title\": \"Memory Absolute Usage\",\r\n
+    \"A\"\r\n        }\r\n      ],\r\n      \"title\": \"CPU Absolute Usage\",\r\n
     \     \"type\": \"timeseries\"\r\n    }\r\n  ],\r\n  \"preload\": false,\r\n  \"refresh\":
     \"5s\",\r\n  \"schemaVersion\": 41,\r\n  \"tags\": [],\r\n  \"templating\": {\r\n
     \   \"list\": []\r\n  },\r\n  \"time\": {\r\n    \"from\": \"now-30m\",\r\n    \"to\":
