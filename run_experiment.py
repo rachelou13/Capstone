@@ -195,18 +195,42 @@ def run_resource_exhaustion(pod_info):
     print("\n" + title_separator + " RESOURCE EXHAUSTION EXPERIMENT " + title_separator  + "\n")
     print("Parameters (press Enter to use default):")
     
-    #Get CPU intensity percentage
-    intensity = input("CPU intensity percentage (1-100) [default: 100]: ").strip()
-    intensity = intensity if intensity else "100"
+    #Get exhaust options
+    cpu_exhaust = input("Exhaust CPU? (y/n) [default: y]: ").strip().lower()
+    cpu_exhaust = cpu_exhaust if cpu_exhaust else "y"
     
-    try:
-        intensity_val = int(intensity)
-        if intensity_val < 1 or intensity_val > 100:
+    cpu_intensity = ""
+    if cpu_exhaust == "y":
+        #Get CPU intensity percentage
+        cpu_intensity = input("CPU intensity percentage (1-100) [default: 100]: ").strip()
+        cpu_intensity = cpu_intensity if cpu_intensity else "100"
+        
+        try:
+            intensity_val = int(cpu_intensity)
+            if intensity_val < 1 or intensity_val > 100:
+                print("Invalid intensity value. Using default (100%).")
+                cpu_intensity = "100"
+        except ValueError:
             print("Invalid intensity value. Using default (100%).")
-            intensity = "100"
-    except ValueError:
-        print("Invalid intensity value. Using default (100%).")
-        intensity = "100"
+            cpu_intensity = "100"
+    
+    memory_exhaust = input("Exhaust memory? (y/n) [default: n]: ").strip().lower()
+    memory_exhaust = memory_exhaust if memory_exhaust else "n"
+    
+    memory_intensity = ""
+    if memory_exhaust == "y":
+        #Get memory intensity percentage
+        memory_intensity = input("Memory intensity percentage (1-100) [default: 80]: ").strip()
+        memory_intensity = memory_intensity if memory_intensity else "80"
+        
+        try:
+            intensity_val = int(memory_intensity)
+            if intensity_val < 1 or intensity_val > 100:
+                print("Invalid intensity value. Using default (80%).")
+                memory_intensity = "80"
+        except ValueError:
+            print("Invalid intensity value. Using default (80%).")
+            memory_intensity = "80"
     
     #Get duration
     duration = input("Duration in seconds [default: 30]: ").strip()
@@ -215,7 +239,16 @@ def run_resource_exhaustion(pod_info):
     print("\nRunning Resource Exhaustion experiment with the following parameters:")
     print(f"Pod: {pod_info['namespace']}/{pod_info['name']}")
     print(f"UID: {pod_info['uid']}")
-    print(f"CPU Intensity: {intensity}%")
+    if cpu_exhaust == "y":
+        print(f"CPU Exhaustion: Enabled (Intensity: {cpu_intensity}%)")
+    else:
+        print("CPU Exhaustion: Disabled")
+    
+    if memory_exhaust == "y":
+        print(f"Memory Exhaustion: Enabled (Intensity: {memory_intensity}%)")
+    else:
+        print("Memory Exhaustion: Disabled")
+    
     print(f"Duration: {duration} seconds")
     
     confirm = input("\nExecute experiment? (y/n): ").strip().lower()
@@ -225,9 +258,14 @@ def run_resource_exhaustion(pod_info):
     cmd = [
         sys.executable, "-m", "python.chaos_experiments.resource_exhaust",
         "-u", pod_info['uid'],
-        "-i", intensity,
         "-d", duration
     ]
+    
+    if cpu_exhaust == "y":
+        cmd.extend(["-cc", "-ci", cpu_intensity])
+    
+    if memory_exhaust == "y":
+        cmd.extend(["-mc", "-mi", memory_intensity])
     
     try:
         print("\nExecuting experiment...")

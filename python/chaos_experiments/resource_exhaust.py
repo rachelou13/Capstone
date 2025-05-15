@@ -75,13 +75,186 @@ def parse_quantity(quantity_str):
             
         return value * multiplier
 
-def cpu_stress_in_pod(api_client, pod_info, container_names, intensity, duration):
-    cpu_stress_test_success = False
+def get_memory_allocation(api_client, pod_info):
     pod_name = pod_info['name']
     namespace = pod_info['namespace']
     node_name = pod_info.get('node')
+    
+    try:
+        core_v1 = client.CoreV1Api(api_client)
+        pod = core_v1.read_namespaced_pod(pod_name, namespace)
+        
+        #Get total memory allocation for the pod
+        total_memory_limit = 0
+        for container in pod.spec.containers:
+            if container.resources and container.resources.limits and 'memory' in container.resources.limits:
+                memory_limit = container.resources.limits['memory']
+                try:
+                    total_memory_limit += parse_quantity(memory_limit)
+                except ValueError as e:
+                    logger.warning(f"Could not parse memory limit '{memory_limit}': {e}")
+        
+        #If no memory limit is set, try to get node allocatable memory
+        if total_memory_limit == 0 and node_name:
+            logger.info(f"No memory limit found for pod {namespace}/{pod_name}, trying to get node allocatable memory")
+            try:
+                node = core_v1.read_node(node_name)
+                if node.status and node.status.allocatable and 'memory' in node.status.allocatable:
+                    node_memory_str = node.status.allocatable['memory']
+                    total_memory_limit = parse_quantity(node_memory_str)
+                    logger.info(f"Using node allocatable memory: {total_memory_limit} bytes")
+                else:
+                    logger.warning(f"Node allocatable memory info not found for node {node_name}")
+                    total_memory_limit = 100 * 1024 * 1024
+            except Exception as e:
+                logger.warning(f"Could not get node allocatable memory: {e}")
+                total_memory_limit = 100 * 1024 * 1024
+        
+        #Default if still no memory limit
+        if total_memory_limit == 0:
+            total_memory_limit = 100 * 1024 * 1024
+            logger.info(f"Defaulting to 100MB for memory intensity calculation")
+        
+        return total_memory_limit
+    except Exception as e:
+        logger.warning(f"Could not determine memory allocation for pod {namespace}/{pod_name}: {e}")
+        logger.warning("Defaulting to 100MB")
+        return 100 * 1024 * 1024
 
-    #Get the pod's CPU allocation to determine the number of cores to stress
+def memory_stress_in_pod(api_client, pod_info, container_names, intensity, duration):
+    memory_stress_test_success = False
+    pod_name = pod_info['name']
+    namespace = pod_info['namespace']
+    
+    #Get the pod's memory allocation
+    total_memory_limit = get_memory_allocation(api_client, pod_info)
+    
+    #Calculate memory to allocate based on intensity percentage
+    memory_to_allocate_mb = int((total_memory_limit * (intensity / 100)) / (1024 * 1024))
+    memory_to_allocate_mb = max(10, memory_to_allocate_mb)
+    
+    logger.info(f"Memory limit: {total_memory_limit / (1024*1024):.2f}MB, intensity: {intensity}%, allocating {memory_to_allocate_mb}MB")
+
+    for container_name in container_names:
+        background_pids_file = f"/tmp/chaos_memory_pids_{container_name}.txt"
+        
+        #Python script to allocate memory
+        memory_python_script = f"""
+            import time
+            import os
+            import signal
+            import sys
+
+            #Function to handle signals for cleanup
+            def cleanup(signum, frame):
+                print("Received signal, cleaning up and exiting")
+                sys.exit(0)
+
+            # Register signal handlers
+            signal.signal(signal.SIGTERM, cleanup)
+            signal.signal(signal.SIGINT, cleanup)
+
+            #Allocate memory - each byte array is 1MB
+            memory_blocks = []
+            try:
+                print("Starting memory allocation of {memory_to_allocate_mb}MB")
+                for i in range({memory_to_allocate_mb}):
+                    # Allocate 1MB and make sure it's actually used
+                    block = bytearray(1024 * 1024)
+                    for j in range(0, len(block), 4096):
+                        block[j] = 1  # Touch memory to ensure it's allocated
+                    memory_blocks.append(block)
+                    if i % 10 == 0 and i > 0:
+                        print(f"Allocated {{i}}MB so far")
+                
+                print(f"Successfully allocated {memory_to_allocate_mb}MB")
+                time.sleep({duration})
+                
+            except MemoryError:
+                print("Memory allocation failed - out of memory")
+                
+            print("Memory stress test completed")
+            """
+        
+        #Shell script to run the Python memory stress
+        command_string = (
+            'echo "Memory stress started at $(date)" > /tmp/memory_stress_internal.log; '
+            f"rm -f {background_pids_file}; "
+            #Create Python script
+            f'echo "{memory_python_script}" > /tmp/memory_stress.py; '
+            #Cleanup function
+            "cleanup() { "
+            f"  echo 'Cleaning up memory stress processes' >> /tmp/memory_stress_internal.log; "
+            f"  if [ -f {background_pids_file} ]; then "
+            f"    echo 'PIDs to kill:' >> /tmp/memory_stress_internal.log; "
+            f"    cat {background_pids_file} >> /tmp/memory_stress_internal.log; "
+            f"    while read pid; do "
+            f"      kill -9 $pid 2>/dev/null || echo \"Failed to kill PID $pid\" >> /tmp/memory_stress_internal.log; "
+            f"    done < {background_pids_file}; "
+            f"    rm -f {background_pids_file}; "
+            f"  fi; "
+            f"  rm -f /tmp/memory_stress.py; "
+            "}; "
+            "trap cleanup EXIT INT TERM; "
+            #Run Python script in background
+            f"python3 /tmp/memory_stress.py > /tmp/memory_script_output.log 2>&1 & echo $! > {background_pids_file}; "
+            f"echo 'Memory stress process started, PID in {background_pids_file}'; "
+            f'echo "Before sleep at $(date)" >> /tmp/memory_stress_internal.log; '
+            f"sleep {duration + 5}; "
+            f'echo "After sleep at $(date)" >> /tmp/memory_stress_internal.log; '
+            "cleanup; "
+            f'echo "Script ended at $(date)" >> /tmp/memory_stress_internal.log;'
+        )
+        
+        memory_stress_cmd_list = [
+            'sh', '-c', command_string
+        ]
+        
+        stdout, stderr, exit_code = exec_command_in_pod(api_client, pod_name, namespace, container_name, duration + 60, command_list=memory_stress_cmd_list)
+        
+        if exit_code == 0:
+            logger.info(f"Memory stress command completed in {namespace}/{pod_name}/{container_name}. Verifying cleanup...")
+            
+            #Check if PID file still exists
+            verify_command = [
+                'sh', 
+                '-c', 
+                f"[ -f {background_pids_file} ] && echo 'PID file still exists' || echo 'PID file removed'"
+            ]
+            verify_stdout, verify_stderr, verify_exit = exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=verify_command)
+            
+            if verify_exit == 0 and "PID file removed" in verify_stdout:
+                logger.info(f"Cleanup verified in {container_name} - memory stress PID file successfully removed")
+                memory_stress_test_success = True
+            else:
+                logger.warning(f"Cleanup may not be complete in {container_name}: {verify_stdout}")
+                #Try one more cleanup
+                final_cleanup = [
+                    'sh',
+                    '-c',
+                    f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'"
+                ]
+                exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=final_cleanup)
+                memory_stress_test_success = True
+        else:
+            logger.error(f"Memory stress command failed in {namespace}/{pod_name}/{container_name}. Exit code: {exit_code}, Stderr: {stderr}")
+            #Try emergency cleanup
+            emergency_cleanup = [
+                'sh',
+                '-c',
+                f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'"
+            ]
+            exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=emergency_cleanup)
+            memory_stress_test_success = False
+            break
+            
+    return memory_stress_test_success
+
+def get_cpu_allocation(api_client, pod_info):
+    pod_name = pod_info['name']
+    namespace = pod_info['namespace']
+    node_name = pod_info.get('node')
+    
     try:
         core_v1 = client.CoreV1Api(api_client)
         pod = core_v1.read_namespaced_pod(pod_name, namespace)
@@ -92,7 +265,7 @@ def cpu_stress_in_pod(api_client, pod_info, container_names, intensity, duration
             if container.resources and container.resources.limits and 'cpu' in container.resources.limits:
                 cpu_limit = container.resources.limits['cpu']
                 try:
-                    #Convert CPU limit to numeric value
+                    # Convert CPU limit to numeric value
                     total_cpu_limit += parse_quantity(cpu_limit)
                 except ValueError as e:
                     logger.warning(f"Could not parse CPU limit '{cpu_limit}': {e}")
@@ -112,18 +285,29 @@ def cpu_stress_in_pod(api_client, pod_info, container_names, intensity, duration
             except Exception as e:
                 logger.warning(f"Could not get node allocatable CPU: {e}")
                 total_cpu_limit = 1
-        #Default to 1 core if still no CPU limit
+        
+        #Default to 2 cores if still no CPU limit
         if total_cpu_limit == 0:
-            total_cpu_limit = 1
-            logger.info(f"Defaulting to 1 core for intensity calculation")
-            
-        #Calculate number of cores based on intensity percentage
-        num_cores = max(1, int(round(total_cpu_limit * (intensity / 100))))
-        logger.info(f"CPU limit: {total_cpu_limit} cores, intensity: {intensity}%, using {num_cores} processes")
+            total_cpu_limit = 2
+            logger.info(f"Defaulting to 2 cores for intensity calculation")
+        
+        return total_cpu_limit
     except Exception as e:
         logger.warning(f"Could not determine CPU allocation for pod {namespace}/{pod_name}: {e}")
-        logger.warning("Defaulting to 1 core")
-        num_cores = 1
+        logger.warning("Defaulting to 2 cores")
+        return 2
+
+def cpu_stress_in_pod(api_client, pod_info, container_names, intensity, duration):
+    cpu_stress_test_success = False
+    pod_name = pod_info['name']
+    namespace = pod_info['namespace']
+    node_name = pod_info.get('node')
+
+    total_cpu_limit = get_cpu_allocation(api_client, pod_info)
+    
+    #Calculate number of cores based on intensity percentage
+    num_cores = max(1, int(round(total_cpu_limit * (intensity / 100))))
+    logger.info(f"CPU limit: {total_cpu_limit} cores, intensity: {intensity}%, using {num_cores} processes")
 
     for container_name in container_names:
         background_pids_file = f"/tmp/chaos_cpu_pids_{container_name}.txt"
@@ -202,7 +386,7 @@ def cpu_stress_in_pod(api_client, pod_info, container_names, intensity, duration
 
 def main():
     #Parse args from command line
-    parser = argparse.ArgumentParser(description="Stress test CPU by adding load based on intensity percentage")
+    parser = argparse.ArgumentParser(description="Stress test CPU and/or memory resources with configurable intensity")
     
     parser.add_argument(
         "-u",
@@ -219,16 +403,37 @@ def main():
         required=False,
         default=30,
         metavar="SECONDS",
-        help="Duration you want the CPU stress test to run for (in seconds)"
+        help="Duration you want the stress test to run for (in seconds)"
     )
     parser.add_argument(
-        "-i",
-        "--intensity",
+        "-cc",
+        "--cpu-exhaust",
+        action="store_true",
+        help="Enable CPU exhaustion"
+    )
+    parser.add_argument(
+        "-ci",
+        "--cpu-intensity",
         type=int,
         required=False,
         default=100,
         metavar="PERCENTAGE",
-        help="CPU intensity percentage (e.g., 50 for 50%% of available CPU)"
+        help="CPU intensity percentage (1-100)"
+    )
+    parser.add_argument(
+        "-mc",
+        "--memory-exhaust",
+        action="store_true",
+        help="Enable memory exhaustion"
+    )
+    parser.add_argument(
+        "-mi",
+        "--memory-intensity", 
+        type=int,
+        required=False,
+        default=80,
+        metavar="PERCENTAGE",
+        help="Memory intensity percentage (1-100). Default is 80% to avoid OOM killer."
     )
     parser.add_argument(
         "-k",
@@ -241,13 +446,19 @@ def main():
     )
     args = parser.parse_args()
     pod_uid = args.pod_uid
-    intensity = args.intensity
     duration = args.duration
     kube_config = args.kube_config
 
-    #Validate intensity percentage
-    if intensity <= 0 or intensity > 100:
-        logger.error(f"Invalid intensity value: {intensity}. Must be between 1 and 100.")
+    cpu_intensity = args.cpu_intensity
+    memory_intensity = args.memory_intensity
+
+    #Validate intensity percentages
+    if args.cpu_exhaust and (cpu_intensity <= 0 or cpu_intensity > 100):
+        logger.error(f"Invalid CPU intensity value: {cpu_intensity}. Must be between 1 and 100.")
+        return
+    
+    if args.memory_exhaust and (memory_intensity <= 0 or memory_intensity > 100):
+        logger.error(f"Invalid memory intensity value: {memory_intensity}. Must be between 1 and 100.")
         return
 
     #Start kafka producer
@@ -337,10 +548,17 @@ def main():
             "pod_uid": pod_uid,
             "pod_name": target_pod_info.get('name'),
             "pod_namespace": target_pod_info.get('namespace'),
-            "cpu_intensity": intensity,
+            "cpu_exhaust": args.cpu_exhaust,
+            "memory_exhaust": args.memory_exhaust,
             "spec_duration": duration
         }
     }
+
+    if args.cpu_exhaust:
+        start_event["parameters"]["cpu_intensity"] = cpu_intensity
+    
+    if args.memory_exhaust:
+        start_event["parameters"]["memory_intensity"] = memory_intensity
 
     #Kafka producer send event function returns True if successful, False if failed
     if not kafka_prod.send_event(start_event, experiment_id):
@@ -349,7 +567,18 @@ def main():
     #Execute experiment
     try:
         logger.info(f"Starting resource exhaustion experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid})")
-        cpu_stress_test_success = cpu_stress_in_pod(api_client, target_pod_info, target_container_names, intensity, duration)
+        
+        #Run CPU stress if enabled
+        if args.cpu_exhaust:
+            logger.info(f"Running CPU stress with {cpu_intensity}% intensity")
+            cpu_stress_test_success = cpu_stress_in_pod(api_client, target_pod_info, target_container_names, cpu_intensity, duration)
+            logger.info(f"CPU stress test completed with success={cpu_stress_test_success}")
+        
+        #Run memory stress if enabled
+        if args.memory_exhaust:
+            logger.info(f"Running memory stress with {memory_intensity}% intensity")
+            memory_stress_test_success = memory_stress_in_pod(api_client, target_pod_info, target_container_names, memory_intensity, duration)
+            logger.info(f"Memory stress test completed with success={memory_stress_test_success}")
     except Exception as e:
         logger.error(f"Unexpected error occurred while running load on CPU(s): {e}")
         if kafka_prod and kafka_prod.connected:
@@ -368,6 +597,12 @@ def main():
     finally:
         #Send end event to kafka
         end_time = datetime.now(timezone.utc)
+        overall_success = True
+        if args.cpu_exhaust and not cpu_stress_test_success:
+            overall_success = False
+        if args.memory_exhaust and not memory_stress_test_success:
+            overall_success = False
+            
         end_event = {
             "timestamp": end_time.isoformat(),
             "experiment_id": experiment_id,
@@ -375,7 +610,7 @@ def main():
             "source": "resource_exhaustion",
             "parameters":
                     start_event["parameters"],
-            "success": cpu_stress_test_success,
+            "success": overall_success,
             "duration": (end_time - start_time).total_seconds()
         }
 
