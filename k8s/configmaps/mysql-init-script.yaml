@@ -21,7 +21,6 @@ data:
       container_name VARCHAR(100) NULL,
       metric_level VARCHAR(20),
       INDEX idx_timestamp (timestamp),
-      INDEX idx_experiment (experiment_detected),
       INDEX idx_container (container_name),
       INDEX idx_metric_level (metric_level)
     );

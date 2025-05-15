@@ -174,12 +174,13 @@ def main():
                     node_name, pod_name, pod_namespace, container_name, metric_level
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
+                
                 mysql_cursor.execute(node_query, (
                     ts, source,
-                    node_metrics.get("cpu_usage", {}).get("percent", 0.0),
-                    node_metrics.get("cpu_usage", {}).get("used", 0.0),
-                    node_metrics.get("memory_usage", {}).get("percent", 0.0),
-                    node_metrics.get("memory_usage", {}).get("used", 0.0),
+                    node_metrics.get("cpu_usage", {}).get("percent"),
+                    node_metrics.get("cpu_usage", {}).get("used"),
+                    node_metrics.get("memory_usage", {}).get("percent"),
+                    node_metrics.get("memory_usage", {}).get("used"),
                     node_name, pod_name, pod_namespace, None, 'node'
                 ))
 
@@ -189,7 +190,7 @@ def main():
                         timestamp, source,
                         cpu_percent, cpu_used, mem_percent, mem_used,
                         node_name, pod_name, pod_namespace, container_name, metric_level
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """
                     for cname, cdata in container_metrics.items():
                         mysql_cursor.execute(container_query, (
