@@ -12,7 +12,7 @@ from kubernetes.client.rest import ApiException
 
 from python.utils.kafka_producer import CapstoneKafkaProducer
 
-logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def apply_iptables_rule(api_client, pod_info, target_service, port):

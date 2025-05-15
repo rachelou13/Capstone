@@ -147,7 +147,7 @@ def main():
                 "timestamp": start_time.isoformat(), 
                 "experiment_id": experiment_id, 
                 "event_type": "error",
-                "source": "pod_deletion", 
+                "source": "terminate_pod", 
                 "error": f"K8s client init failed: {e}"
             }, experiment_id)
         return
@@ -157,7 +157,7 @@ def main():
         "timestamp": start_time.isoformat(),
         "experiment_id": experiment_id,
         "event_type": "start",
-        "source": "pod_deletion",
+        "source": "terminate_pod",
         "parameters": {
             "pod_name": pod_name,
             "namespace": namespace,
@@ -193,7 +193,7 @@ def main():
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "experiment_id": experiment_id,
                 "event_type": "error",
-                "source": "pod_deletion",
+                "source": "terminate_pod",
                 "parameters": start_event["parameters"],
                 "error": f"Experiment failed: {e}"
             }, experiment_id)
@@ -207,7 +207,7 @@ def main():
             "timestamp": end_time.isoformat(),
             "experiment_id": experiment_id,
             "event_type": "end",
-            "source": "pod_deletion",
+            "source": "terminate_pod",
             "parameters": start_event["parameters"],
             "success": deletion_successful and restart_successful,
             "details": {

@@ -34,10 +34,96 @@ def exec_command_in_pod(api_client, pod_name, namespace, container_name, duratio
         logger.error(f"Unexpected error executing command in {namespace}/{pod_name}/{container_name}: {e}")
         return None, str(e), 1
 
-def cpu_stress_in_pod(api_client, pod_info, container_names, num_cores, duration):
+def parse_quantity(quantity_str):
+        if not isinstance(quantity_str, str) or not quantity_str:
+            raise ValueError(f"Quantity must be a non-empty string, got '{quantity_str}'")
+
+        binary_suffixes = {
+            'Ki': 2**10, 'Mi': 2**20, 'Gi': 2**30, 'Ti': 2**40, 'Pi': 2**50, 'Ei': 2**60
+        }
+        decimal_suffixes = {
+            'n': 1e-9, 'm': 1e-3, 'k': 1e3, 'M': 1e6, 'G': 1e9, 'T': 1e12, 'P': 1e15, 'E': 1e18
+        }
+
+        numeric_part_str = quantity_str
+        multiplier = 1.0
+        processed_suffix = False
+
+        if len(quantity_str) >= 3:
+            suffix = quantity_str[-2:]
+            if suffix in binary_suffixes:
+                numeric_part_str = quantity_str[:-2]
+                multiplier = binary_suffixes[suffix]
+                processed_suffix = True
+        
+        if not processed_suffix and len(quantity_str) >= 2:
+            suffix = quantity_str[-1:]
+            if suffix in decimal_suffixes:
+                numeric_part_str = quantity_str[:-1]
+                multiplier = decimal_suffixes[suffix]
+                processed_suffix = True
+            elif not quantity_str[-1].isdigit():
+                 raise ValueError(f"Unknown suffix or invalid format in quantity string: {quantity_str}")
+
+        if not numeric_part_str:
+            raise ValueError(f"No numeric value found in quantity string: {quantity_str}")
+
+        try:
+            value = float(numeric_part_str)
+        except ValueError:
+            raise ValueError(f"Invalid numeric part '{numeric_part_str}' in quantity string: {quantity_str}")
+            
+        return value * multiplier
+
+def cpu_stress_in_pod(api_client, pod_info, container_names, intensity, duration):
     cpu_stress_test_success = False
     pod_name = pod_info['name']
     namespace = pod_info['namespace']
+    node_name = pod_info.get('node')
+
+    #Get the pod's CPU allocation to determine the number of cores to stress
+    try:
+        core_v1 = client.CoreV1Api(api_client)
+        pod = core_v1.read_namespaced_pod(pod_name, namespace)
+        
+        #Get total CPU allocation for the pod
+        total_cpu_limit = 0
+        for container in pod.spec.containers:
+            if container.resources and container.resources.limits and 'cpu' in container.resources.limits:
+                cpu_limit = container.resources.limits['cpu']
+                try:
+                    #Convert CPU limit to numeric value
+                    total_cpu_limit += parse_quantity(cpu_limit)
+                except ValueError as e:
+                    logger.warning(f"Could not parse CPU limit '{cpu_limit}': {e}")
+        
+        #If no CPU limit is set, try to get node allocatable CPU
+        if total_cpu_limit == 0 and node_name:
+            logger.info(f"No CPU limit found for pod {namespace}/{pod_name}, trying to get node allocatable CPU")
+            try:
+                node = core_v1.read_node(node_name)
+                if node.status and node.status.allocatable and 'cpu' in node.status.allocatable:
+                    node_cpu_str = node.status.allocatable['cpu']
+                    total_cpu_limit = parse_quantity(node_cpu_str)
+                    logger.info(f"Using node allocatable CPU: {total_cpu_limit} cores")
+                else:
+                    logger.warning(f"Node allocatable CPU info not found for node {node_name}")
+                    total_cpu_limit = 1
+            except Exception as e:
+                logger.warning(f"Could not get node allocatable CPU: {e}")
+                total_cpu_limit = 1
+        #Default to 1 core if still no CPU limit
+        if total_cpu_limit == 0:
+            total_cpu_limit = 1
+            logger.info(f"Defaulting to 1 core for intensity calculation")
+            
+        #Calculate number of cores based on intensity percentage
+        num_cores = max(1, int(round(total_cpu_limit * (intensity / 100))))
+        logger.info(f"CPU limit: {total_cpu_limit} cores, intensity: {intensity}%, using {num_cores} processes")
+    except Exception as e:
+        logger.warning(f"Could not determine CPU allocation for pod {namespace}/{pod_name}: {e}")
+        logger.warning("Defaulting to 1 core")
+        num_cores = 1
 
     for container_name in container_names:
         background_pids_file = f"/tmp/chaos_cpu_pids_{container_name}.txt"
@@ -116,7 +202,7 @@ def cpu_stress_in_pod(api_client, pod_info, container_names, num_cores, duration
 
 def main():
     #Parse args from command line
-    parser = argparse.ArgumentParser(description="Stress test CPU by adding load to specified numbers of cores")
+    parser = argparse.ArgumentParser(description="Stress test CPU by adding load based on intensity percentage")
     
     parser.add_argument(
         "-u",
@@ -136,13 +222,13 @@ def main():
         help="Duration you want the CPU stress test to run for (in seconds)"
     )
     parser.add_argument(
-        "-c",
-        "--cores",
+        "-i",
+        "--intensity",
         type=int,
         required=False,
-        default=2,
-        metavar="CORES",
-        help="Number of CPU stress processes to start in the target container (e.g., corresponding to virtual cores available to the pod/container)."
+        default=100,
+        metavar="PERCENTAGE",
+        help="CPU intensity percentage (e.g., 50 for 50%% of available CPU)"
     )
     parser.add_argument(
         "-k",
@@ -155,9 +241,14 @@ def main():
     )
     args = parser.parse_args()
     pod_uid = args.pod_uid
-    num_cores = args.cores
+    intensity = args.intensity
     duration = args.duration
     kube_config = args.kube_config
+
+    #Validate intensity percentage
+    if intensity <= 0 or intensity > 100:
+        logger.error(f"Invalid intensity value: {intensity}. Must be between 1 and 100.")
+        return
 
     #Start kafka producer
     kafka_prod = CapstoneKafkaProducer()
@@ -205,7 +296,7 @@ def main():
                 }
 
                 found_pod = pod
-                logger.info(f"Found pod matching pod UID {pod_uid}: {target_pod_info['namespace']}/{target_pod_info['name']}")
+                logger.info(f"Found pod matching pod UID {pod_uid}: {target_pod_info['namespace']}/{target_pod_info['name']} on node {target_pod_info['node']}")
                 break
         
         if not found_pod:
@@ -246,7 +337,7 @@ def main():
             "pod_uid": pod_uid,
             "pod_name": target_pod_info.get('name'),
             "pod_namespace": target_pod_info.get('namespace'),
-            "cpu_cores": num_cores,
+            "cpu_intensity": intensity,
             "spec_duration": duration
         }
     }
@@ -258,7 +349,7 @@ def main():
     #Execute experiment
     try:
         logger.info(f"Starting resource exhaustion experiment on pod {target_pod_info['namespace']}/{target_pod_info['name']} (UID: {pod_uid})")
-        cpu_stress_test_success = cpu_stress_in_pod(api_client, target_pod_info, target_container_names, num_cores, duration)
+        cpu_stress_test_success = cpu_stress_in_pod(api_client, target_pod_info, target_container_names, intensity, duration)
     except Exception as e:
         logger.error(f"Unexpected error occurred while running load on CPU(s): {e}")
         if kafka_prod and kafka_prod.connected:

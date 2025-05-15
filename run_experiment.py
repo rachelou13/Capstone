@@ -156,8 +156,8 @@ def run_network_partition(pod_info):
     protocol = protocol if protocol in ["tcp", "udp", "icmp"] else "tcp"
     
     #Get duration
-    duration = input("Duration in seconds [default: 30]: ").strip()
-    duration = duration if duration else "30"
+    duration = input("Duration in seconds [default: 60]: ").strip()
+    duration = duration if duration else "60"
     
     print("\nRunning Network Partition experiment with the following parameters:")
     print(f"Pod: {pod_info['namespace']}/{pod_info['name']}")
@@ -195,9 +195,18 @@ def run_resource_exhaustion(pod_info):
     print("\n" + title_separator + " RESOURCE EXHAUSTION EXPERIMENT " + title_separator  + "\n")
     print("Parameters (press Enter to use default):")
     
-    #Get CPU cores
-    cores = input("Number of CPU cores to stress [default: 2]: ").strip()
-    cores = cores if cores else "2"
+    #Get CPU intensity percentage
+    intensity = input("CPU intensity percentage (1-100) [default: 100]: ").strip()
+    intensity = intensity if intensity else "100"
+    
+    try:
+        intensity_val = int(intensity)
+        if intensity_val < 1 or intensity_val > 100:
+            print("Invalid intensity value. Using default (100%).")
+            intensity = "100"
+    except ValueError:
+        print("Invalid intensity value. Using default (100%).")
+        intensity = "100"
     
     #Get duration
     duration = input("Duration in seconds [default: 30]: ").strip()
@@ -206,7 +215,7 @@ def run_resource_exhaustion(pod_info):
     print("\nRunning Resource Exhaustion experiment with the following parameters:")
     print(f"Pod: {pod_info['namespace']}/{pod_info['name']}")
     print(f"UID: {pod_info['uid']}")
-    print(f"CPU Cores: {cores}")
+    print(f"CPU Intensity: {intensity}%")
     print(f"Duration: {duration} seconds")
     
     confirm = input("\nExecute experiment? (y/n): ").strip().lower()
@@ -216,7 +225,7 @@ def run_resource_exhaustion(pod_info):
     cmd = [
         sys.executable, "-m", "python.chaos_experiments.resource_exhaust",
         "-u", pod_info['uid'],
-        "-c", cores,
+        "-i", intensity,
         "-d", duration
     ]
     
@@ -329,7 +338,7 @@ def main():
             print("\nExiting. Goodbye!")
             break
         
-        if choice not in ["1", "2", "3"]:
+        if choice not in ["1", "2", "3", "4"]:
             print("\nInvalid choice. Please try again.")
             input("Press Enter to continue...")
             continue
