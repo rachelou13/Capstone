@@ -96,7 +96,6 @@ class StandaloneMetricsScraper:
         self.allocatable_cpu = None
         self.allocatable_memory = None
         self.scrape_interval = scrape_interval
-        self.experiment_detected = False
         self.kafka_prod = KafkaMetricsProducer(topic='infra-metrics')
         self.run_loop = None
         self.start_time = None
@@ -255,10 +254,15 @@ class StandaloneMetricsScraper:
             container_resources = {}
             
             if pod and pod.spec and pod.spec.containers:
+                #Get pod QoS class to determine resource handling strategy
+                pod_qos_class = pod.status.qos_class if pod.status and hasattr(pod.status, 'qos_class') else None
+                logger.debug(f"Pod {self.target_pod_name} QoS class: {pod_qos_class}")
+                
                 for container in pod.spec.containers:
                     container_name = container.name
                     resources = {}
                     
+                    #First try to get limits directly from container spec
                     if container.resources:
                         if container.resources.limits:
                             cpu_limit = container.resources.limits.get('cpu')
@@ -270,12 +274,29 @@ class StandaloneMetricsScraper:
                             if memory_limit:
                                 resources['memory_limit'] = self._parse_quantity(memory_limit)
                         
+                        #If no limits, try requests
                         if container.resources.requests:
                             if not resources.get('cpu_limit') and container.resources.requests.get('cpu'):
                                 resources['cpu_limit'] = self._parse_quantity(container.resources.requests.get('cpu'))
                             
                             if not resources.get('memory_limit') and container.resources.requests.get('memory'):
                                 resources['memory_limit'] = self._parse_quantity(container.resources.requests.get('memory'))
+                    
+                    #If still no resources defined, use node allocatable resources with an estimated share
+                    if not resources.get('cpu_limit') and self.allocatable_cpu is not None:
+                        # For containers with no resource limits, estimate based on total containers in pod
+                        total_containers = len(pod.spec.containers)
+                        #Assuming each container gets an equal share of node resources
+                        estimated_cpu = self.allocatable_cpu / total_containers
+                        resources['cpu_limit'] = estimated_cpu
+                        logger.info(f"No CPU limits for container {container_name}, using estimated {estimated_cpu} cores (based on node allocatable)")
+                    
+                    if not resources.get('memory_limit') and self.allocatable_memory is not None:
+                        total_containers = len(pod.spec.containers)
+                        # Assuming each container gets an equal share of node resources
+                        estimated_memory = self.allocatable_memory / total_containers
+                        resources['memory_limit'] = estimated_memory
+                        logger.info(f"No memory limits for container {container_name}, using estimated {estimated_memory/1024/1024:.2f}MB (based on node allocatable)")
                     
                     container_resources[container_name] = resources
             
@@ -441,7 +462,6 @@ class StandaloneMetricsScraper:
                 "timestamp": time_scraped.isoformat(),
                 "event_type": "monitor",
                 "source": "infra_metrics_scraper",
-                "experiment_detected": self.experiment_detected,
                 "metrics": {
                     "node": {
                         "cpu_usage": {
@@ -506,10 +526,6 @@ class StandaloneMetricsScraper:
         self.run_loop = False
         if self.kafka_prod:
             self.kafka_prod.close()
-
-    def set_experiment_detected(self, experiment_detected):
-        self.experiment_detected = experiment_detected
-        logger.info(f"Experiment detected flag set to: {experiment_detected}")
 
 
 def main():

@@ -8,7 +8,7 @@ from kubernetes.stream import stream
 
 from python.utils.kafka_producer import CapstoneKafkaProducer
 
-logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def exec_command_in_pod(api_client, pod_name, namespace, container_name, duration, command_list):
@@ -126,63 +126,24 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
     pod_name = pod_info['name']
     namespace = pod_info['namespace']
     
-    #Get the pod's memory allocation
+    # Get the pod's memory allocation
     total_memory_limit = get_memory_allocation(api_client, pod_info)
     
-    #Calculate memory to allocate based on intensity percentage
+    # Calculate memory to allocate based on intensity percentage (in MB)
     memory_to_allocate_mb = int((total_memory_limit * (intensity / 100)) / (1024 * 1024))
-    memory_to_allocate_mb = max(10, memory_to_allocate_mb)
+    memory_to_allocate_mb = max(10, memory_to_allocate_mb)  # Minimum 10MB to ensure we create some pressure
     
     logger.info(f"Memory limit: {total_memory_limit / (1024*1024):.2f}MB, intensity: {intensity}%, allocating {memory_to_allocate_mb}MB")
 
     for container_name in container_names:
         background_pids_file = f"/tmp/chaos_memory_pids_{container_name}.txt"
+        memory_file = f"/tmp/memory-file-{container_name}"
         
-        #Python script to allocate memory
-        memory_python_script = f"""
-            import time
-            import os
-            import signal
-            import sys
-
-            #Function to handle signals for cleanup
-            def cleanup(signum, frame):
-                print("Received signal, cleaning up and exiting")
-                sys.exit(0)
-
-            # Register signal handlers
-            signal.signal(signal.SIGTERM, cleanup)
-            signal.signal(signal.SIGINT, cleanup)
-
-            #Allocate memory - each byte array is 1MB
-            memory_blocks = []
-            try:
-                print("Starting memory allocation of {memory_to_allocate_mb}MB")
-                for i in range({memory_to_allocate_mb}):
-                    # Allocate 1MB and make sure it's actually used
-                    block = bytearray(1024 * 1024)
-                    for j in range(0, len(block), 4096):
-                        block[j] = 1  # Touch memory to ensure it's allocated
-                    memory_blocks.append(block)
-                    if i % 10 == 0 and i > 0:
-                        print(f"Allocated {{i}}MB so far")
-                
-                print(f"Successfully allocated {memory_to_allocate_mb}MB")
-                time.sleep({duration})
-                
-            except MemoryError:
-                print("Memory allocation failed - out of memory")
-                
-            print("Memory stress test completed")
-            """
-        
-        #Shell script to run the Python memory stress
         command_string = (
             'echo "Memory stress started at $(date)" > /tmp/memory_stress_internal.log; '
             f"rm -f {background_pids_file}; "
-            #Create Python script
-            f'echo "{memory_python_script}" > /tmp/memory_stress.py; '
-            #Cleanup function
+            f"rm -f {memory_file}; "
+            # Cleanup function
             "cleanup() { "
             f"  echo 'Cleaning up memory stress processes' >> /tmp/memory_stress_internal.log; "
             f"  if [ -f {background_pids_file} ]; then "
@@ -193,15 +154,30 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
             f"    done < {background_pids_file}; "
             f"    rm -f {background_pids_file}; "
             f"  fi; "
-            f"  rm -f /tmp/memory_stress.py; "
+            f"  rm -f {memory_file}*; "  # Use wildcard to catch any potential split files
+            f"  sync; "  # Ensure the filesystem catches up with file deletion
             "}; "
             "trap cleanup EXIT INT TERM; "
-            #Run Python script in background
-            f"python3 /tmp/memory_stress.py > /tmp/memory_script_output.log 2>&1 & echo $! > {background_pids_file}; "
-            f"echo 'Memory stress process started, PID in {background_pids_file}'; "
+            
+            # DD command to allocate memory in background
+            # Breaking into multiple files of 1GB max to avoid issues with very large files
+            f"for i in $(seq 1 $(({memory_to_allocate_mb} / 1024 + 1))); do "
+            f"  chunk_size=$((i == $(({memory_to_allocate_mb} / 1024 + 1)) ? {memory_to_allocate_mb} % 1024 : 1024)); "
+            f"  [ $chunk_size -eq 0 ] && continue; "
+            f"  (dd if=/dev/zero of={memory_file}-$i bs=1M count=$chunk_size status=progress || true) & "
+            f"  echo $! >> {background_pids_file}; "
+            f"  echo \"Started dd process $! to allocate $chunk_size MB\"; "
+            f"done; "
+            
+            # Force sync to ensure memory is actually allocated
+            "sync; "
+            f"echo 'Memory stress processes started, PIDs in {background_pids_file}'; "
+            f'echo "Memory allocation complete at $(date)" >> /tmp/memory_stress_internal.log; '
+            f"cat /proc/meminfo | grep -E 'MemTotal|MemFree|MemAvailable' >> /tmp/memory_stress_internal.log; "
             f'echo "Before sleep at $(date)" >> /tmp/memory_stress_internal.log; '
-            f"sleep {duration + 5}; "
+            f"sleep {duration}; "
             f'echo "After sleep at $(date)" >> /tmp/memory_stress_internal.log; '
+            f"cat /proc/meminfo | grep -E 'MemTotal|MemFree|MemAvailable' >> /tmp/memory_stress_internal.log; "
             "cleanup; "
             f'echo "Script ended at $(date)" >> /tmp/memory_stress_internal.log;'
         )
@@ -210,12 +186,12 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
             'sh', '-c', command_string
         ]
         
-        stdout, stderr, exit_code = exec_command_in_pod(api_client, pod_name, namespace, container_name, duration + 60, command_list=memory_stress_cmd_list)
+        stdout, stderr, exit_code = exec_command_in_pod(api_client, pod_name, namespace, container_name, duration + 120, command_list=memory_stress_cmd_list)
         
         if exit_code == 0:
             logger.info(f"Memory stress command completed in {namespace}/{pod_name}/{container_name}. Verifying cleanup...")
             
-            #Check if PID file still exists
+            # Check if PID file still exists
             verify_command = [
                 'sh', 
                 '-c', 
@@ -223,26 +199,34 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
             ]
             verify_stdout, verify_stderr, verify_exit = exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=verify_command)
             
-            if verify_exit == 0 and "PID file removed" in verify_stdout:
-                logger.info(f"Cleanup verified in {container_name} - memory stress PID file successfully removed")
+            # Check if memory files are gone
+            verify_files_command = [
+                'sh',
+                '-c',
+                f"ls -la {memory_file}* 2>/dev/null || echo 'Memory files removed'"
+            ]
+            verify_files_stdout, verify_files_stderr, verify_files_exit = exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=verify_files_command)
+            
+            if verify_exit == 0 and "PID file removed" in verify_stdout and "Memory files removed" in verify_files_stdout:
+                logger.info(f"Cleanup verified in {container_name} - memory stress resources successfully removed")
                 memory_stress_test_success = True
             else:
-                logger.warning(f"Cleanup may not be complete in {container_name}: {verify_stdout}")
-                #Try one more cleanup
+                logger.warning(f"Cleanup may not be complete in {container_name}. PID check: {verify_stdout}, Files check: {verify_files_stdout}")
+                # Try one more cleanup
                 final_cleanup = [
                     'sh',
                     '-c',
-                    f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'"
+                    f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'; rm -f {memory_file}*"
                 ]
                 exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=final_cleanup)
                 memory_stress_test_success = True
         else:
             logger.error(f"Memory stress command failed in {namespace}/{pod_name}/{container_name}. Exit code: {exit_code}, Stderr: {stderr}")
-            #Try emergency cleanup
+            # Try emergency cleanup
             emergency_cleanup = [
                 'sh',
                 '-c',
-                f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'"
+                f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'; rm -f {memory_file}*"
             ]
             exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=emergency_cleanup)
             memory_stress_test_success = False
