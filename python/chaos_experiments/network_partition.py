@@ -105,47 +105,6 @@ def remove_iptables_rule(api_client, pod_info, target_service, port):
         logger.error(f"Failed to remove iptables rule: {e}")
         return False
 
-def check_proxy_failover(api_client, pod_info):
-    try:
-        core_v1 = client.CoreV1Api(api_client)
-        logs = core_v1.read_namespaced_pod_log(
-            pod_info['name'], 
-            pod_info['namespace'],
-            tail_lines=100
-        )
-
-        logger.info(f"LOGS FOUND: {logs}")
-        
-        #Check for failover message in logs
-        if "Primary is down. Promoting replica" in logs:
-            logger.info("Proxy failover to replica confirmed in logs")
-            return True
-        else:
-            logger.warning("No failover message found in proxy logs")
-            return False
-    except Exception as e:
-        logger.error(f"Failed to check proxy logs: {e}")
-        return False
-    
-def validate_mysql_proxy_failover(api_client, pod_info, max_attempts=10, attempt_delay=5):
-    logger.info(f"Validating MySQL proxy failover for pod {pod_info['name']}")
-    
-    #Keep checking until we see the failover message or run out of attempts
-    for attempt in range(max_attempts):
-        logger.info(f"Checking for failover confirmation (attempt {attempt+1}/{max_attempts})")
-        
-        #Check if proxy has failed over
-        if check_proxy_failover(api_client, pod_info):
-            logger.info(f"Failover confirmed on attempt {attempt+1}")
-            return True
-        
-        #Wait before next attempt
-        logger.info(f"Failover not confirmed yet, waiting {attempt_delay}s before next check")
-        time.sleep(attempt_delay)
-    
-    logger.warning(f"Failed to confirm MySQL proxy failover after {max_attempts} attempts")
-    return False
-
 def validate_connectivity(api_client, pod_info, target_service, port, expected_failure=False):
     pod_name = pod_info['name']
     namespace = pod_info['namespace']
@@ -261,12 +220,6 @@ def main():
         help="Protocol to block (tcp, udp, or icmp)"
     )
     parser.add_argument(
-        "-v",
-        "--validate-failover",
-        action="store_true",
-        help="Validate that MySQL proxy has failed over to replica"
-    )
-    parser.add_argument(
         "-k",
         "--kube-config",
         type=str,
@@ -282,7 +235,6 @@ def main():
     target_service = args.target_service
     port = args.port
     protocol = args.protocol
-    validate_failover = args.validate_failover
     kube_config = args.kube_config
 
     #Start kafka producer
@@ -295,7 +247,6 @@ def main():
     rollback_successful = False
     partition_validated = None
     rollback_validated = None
-    failover_validated = None
 
     #K8s client setup
     try:
@@ -411,34 +362,6 @@ def main():
             #Wait for specified duration
             logger.info(f"Maintaining network partition for {duration}s")
             time.sleep(duration)
-
-            #If this is a MySQL proxy experiment, check for failover
-            if validate_failover:
-                logger.info("Waiting for MySQL proxy to detect failure and fail over...")
-                
-                time.sleep(15)       
-
-                #Validate that failover occurred
-                failover_validated = validate_mysql_proxy_failover(api_client, target_pod_info)
-                
-                if failover_validated:
-                    logger.info("MySQL proxy successfully failed over to replica!")
-                    #Send event to Kafka
-                    if kafka_prod and kafka_prod.connected:
-                        failover_event = {
-                            "timestamp": datetime.now(timezone.utc).isoformat(), 
-                            "experiment_id": experiment_id, 
-                            "event_type": "info",
-                            "source": "network_partition",
-                            "message": "MySQL proxy failover detected",
-                            "details": {
-                                "proxy_pod": target_pod_info['name'],
-                                "primary_service": target_service
-                            }
-                        }
-                        kafka_prod.send_event(failover_event, experiment_id)
-                else:
-                    logger.warning("Could not confirm MySQL proxy failover")
             
             #Cancel timer if we reached here without timeout
             timer.cancel()
@@ -498,7 +421,6 @@ def main():
             "details": {
                 "partition_validated": partition_validated,
                 "rollback_validated": rollback_validated,
-                "failover_validated": failover_validated
             },
             "duration": duration
         }
