@@ -128,11 +128,11 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
     
     total_memory_limit = get_memory_allocation(api_client, pod_info)
     
-    scaling_factor = 1.5  # Allocate 50% more than requested to account for OS caching
-    adjusted_intensity = min(intensity * scaling_factor, 95)  # Cap at 95% to avoid OOM killer
+    scaling_factor = 1.5  #Allocate 50% more than requested to account for OS caching
+    adjusted_intensity = min(intensity * scaling_factor, 95)  #Cap at 95% to avoid OOM killer
     
     memory_to_allocate_mb = int((total_memory_limit * (adjusted_intensity / 100)) / (1024 * 1024))
-    memory_to_allocate_mb = max(10, memory_to_allocate_mb)  # Minimum 10MB to ensure we create some pressure
+    memory_to_allocate_mb = max(10, memory_to_allocate_mb)  #Minimum 10MB to ensure we create some pressure
     
     logger.info(f"Memory limit: {total_memory_limit / (1024*1024):.2f}MB, requested intensity: {intensity}%, "
                 f"adjusted intensity: {adjusted_intensity}%, allocating {memory_to_allocate_mb}MB")
@@ -167,7 +167,7 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
             "trap cleanup EXIT INT TERM; "
             
             #Calculate chunk size - use smaller chunks for better memory pressure
-            "CHUNK_SIZE_MB=32; "  # Using 32MB chunks
+            "CHUNK_SIZE_MB=32; "  #Using 32MB chunks
             f"NUM_CHUNKS=$(({memory_to_allocate_mb} / $CHUNK_SIZE_MB + 1)); "
             f"LAST_CHUNK_SIZE=$(({memory_to_allocate_mb} % $CHUNK_SIZE_MB)); "
             
@@ -193,7 +193,7 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
             "  while true; do "
             #Read a small amount from each file to keep it active in memory
             "    find /tmp/mem_stress_chunks -type f -name 'chunk_*' | xargs -I{} dd if={} of=/dev/null bs=4k count=1 status=none 2>/dev/null || true; "
-            "    sleep 5; "  # Touch every 5 seconds
+            "    sleep 5; "  #Touch every 5 seconds
             "  done "
             ") & echo $! >> {background_pids_file}; "
             
@@ -303,7 +303,7 @@ def get_cpu_allocation(api_client, pod_info):
             if container.resources and container.resources.limits and 'cpu' in container.resources.limits:
                 cpu_limit = container.resources.limits['cpu']
                 try:
-                    # Convert CPU limit to numeric value
+                    #Convert CPU limit to numeric value
                     total_cpu_limit += parse_quantity(cpu_limit)
                 except ValueError as e:
                     logger.warning(f"Could not parse CPU limit '{cpu_limit}': {e}")
