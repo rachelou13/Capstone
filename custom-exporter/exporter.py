@@ -11,6 +11,22 @@ app = Flask(__name__)
 def metrics():
     lines = []
 
+    # Checks to see if mysql primary is up
+    try:
+        mysql_primary = mysql.connector.connect(
+        host="mysql-primary-0.mysql-primary.default.svc.cluster.local",
+        user="root",
+        password="admin",
+        database="capstone_db",
+        connection_timeout=3
+        )
+        cursor = mysql_primary.cursor()
+        cursor.execute("SELECT 1")  # simple heartbeat query
+        lines.append("mysql_primary_up 1")
+    except Exception as e:
+        lines.append("mysql_primary_up 0")
+        lines.append(f'# MySQL primary error: {str(e)}')
+
     # === MySQL: infra_metrics ===
     try:
         mysql_conn = mysql.connector.connect(
