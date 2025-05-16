@@ -49,7 +49,8 @@ def metrics():
             if mem_percent is not None:
                 lines.append(f'infra_mem_usage_percent{{pod="{pod}", node="{node}", namespace="{namespace}"}} {mem_percent}')
             if mem_used is not None:
-                lines.append(f'infra_mem_usage_absolute{{pod="{pod}", node="{node}", namespace="{namespace}"}} {mem_used}')
+                mem_used_gb = mem_used / 1024 / 1024 / 1024
+                lines.append(f'infra_mem_usage_absolute{{pod="{pod}", node="{node}", namespace="{namespace}"}} {mem_used_gb:.2f}')
 
         cursor.close()
         mysql_conn.close()
