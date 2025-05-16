@@ -177,10 +177,10 @@ def main():
                 
                 mysql_cursor.execute(node_query, (
                     ts, source,
-                    node_metrics.get("cpu_usage", {}).get("percent"),
-                    node_metrics.get("cpu_usage", {}).get("used"),
-                    node_metrics.get("memory_usage", {}).get("percent"),
-                    node_metrics.get("memory_usage", {}).get("used"),
+                    node_metrics.get("cpu_usage", {}).get("percent", 0.0),
+                    node_metrics.get("cpu_usage", {}).get("used", 0.0),
+                    node_metrics.get("memory_usage", {}).get("percent", 0.0),
+                    node_metrics.get("memory_usage", {}).get("used", 0.0),
                     node_name, pod_name, pod_namespace, None, 'node'
                 ))
 
@@ -195,10 +195,10 @@ def main():
                     for cname, cdata in container_metrics.items():
                         mysql_cursor.execute(container_query, (
                             ts, source,
-                            cdata.get("cpu_usage", {}).get("percent"),
-                            cdata.get("cpu_usage", {}).get("used"),
-                            cdata.get("memory_usage", {}).get("percent"),
-                            cdata.get("memory_usage", {}).get("used"),
+                            cdata.get("cpu_usage", {}).get("percent", 0.0),
+                            cdata.get("cpu_usage", {}).get("used", 0.0),
+                            cdata.get("memory_usage", {}).get("percent", 0.0),
+                            cdata.get("memory_usage", {}).get("used", 0.0),
                             node_name, pod_name, pod_namespace, cname, 'container'
                         ))
 
