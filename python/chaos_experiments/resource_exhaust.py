@@ -126,14 +126,16 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
     pod_name = pod_info['name']
     namespace = pod_info['namespace']
     
-    # Get the pod's memory allocation
     total_memory_limit = get_memory_allocation(api_client, pod_info)
     
-    # Calculate memory to allocate based on intensity percentage (in MB)
-    memory_to_allocate_mb = int((total_memory_limit * (intensity / 100)) / (1024 * 1024))
-    memory_to_allocate_mb = max(10, memory_to_allocate_mb)  # Minimum 10MB to ensure we create some pressure
+    scaling_factor = 1.5  #Allocate 50% more than requested to account for OS caching
+    adjusted_intensity = min(intensity * scaling_factor, 95)  #Cap at 95% to avoid OOM killer
     
-    logger.info(f"Memory limit: {total_memory_limit / (1024*1024):.2f}MB, intensity: {intensity}%, allocating {memory_to_allocate_mb}MB")
+    memory_to_allocate_mb = int((total_memory_limit * (adjusted_intensity / 100)) / (1024 * 1024))
+    memory_to_allocate_mb = max(10, memory_to_allocate_mb)  #Minimum 10MB to ensure we create some pressure
+    
+    logger.info(f"Memory limit: {total_memory_limit / (1024*1024):.2f}MB, requested intensity: {intensity}%, "
+                f"adjusted intensity: {adjusted_intensity}%, allocating {memory_to_allocate_mb}MB")
 
     for container_name in container_names:
         background_pids_file = f"/tmp/chaos_memory_pids_{container_name}.txt"
@@ -142,10 +144,15 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
         command_string = (
             'echo "Memory stress started at $(date)" > /tmp/memory_stress_internal.log; '
             f"rm -f {background_pids_file}; "
-            f"rm -f {memory_file}; "
-            # Cleanup function
+            f"mkdir -p /tmp/mem_stress_chunks; "
+            
+            #Record memory before stress
+            'echo "Memory BEFORE stress:" >> /tmp/memory_stress_internal.log; '
+            'cat /proc/meminfo | grep -E "MemTotal|MemFree|MemAvailable|Cached|Buffers" >> /tmp/memory_stress_internal.log; '
+            
+            #Cleanup function
             "cleanup() { "
-            f"  echo 'Cleaning up memory stress processes' >> /tmp/memory_stress_internal.log; "
+            '  echo "Cleaning up memory stress files and processes" >> /tmp/memory_stress_internal.log; '
             f"  if [ -f {background_pids_file} ]; then "
             f"    echo 'PIDs to kill:' >> /tmp/memory_stress_internal.log; "
             f"    cat {background_pids_file} >> /tmp/memory_stress_internal.log; "
@@ -154,44 +161,81 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
             f"    done < {background_pids_file}; "
             f"    rm -f {background_pids_file}; "
             f"  fi; "
-            f"  rm -f {memory_file}*; "  # Use wildcard to catch any potential split files
-            f"  sync; "  # Ensure the filesystem catches up with file deletion
+            "  rm -rf /tmp/mem_stress_chunks; "
+            "  sync; "
             "}; "
             "trap cleanup EXIT INT TERM; "
             
-            # DD command to allocate memory in background
-            # Breaking into multiple files of 1GB max to avoid issues with very large files
-            f"for i in $(seq 1 $(({memory_to_allocate_mb} / 1024 + 1))); do "
-            f"  chunk_size=$((i == $(({memory_to_allocate_mb} / 1024 + 1)) ? {memory_to_allocate_mb} % 1024 : 1024)); "
-            f"  [ $chunk_size -eq 0 ] && continue; "
-            f"  (dd if=/dev/zero of={memory_file}-$i bs=1M count=$chunk_size status=progress || true) & "
-            f"  echo $! >> {background_pids_file}; "
-            f"  echo \"Started dd process $! to allocate $chunk_size MB\"; "
-            f"done; "
+            #Calculate chunk size - use smaller chunks for better memory pressure
+            "CHUNK_SIZE_MB=32; "  #Using 32MB chunks
+            f"NUM_CHUNKS=$(({memory_to_allocate_mb} / $CHUNK_SIZE_MB + 1)); "
+            f"LAST_CHUNK_SIZE=$(({memory_to_allocate_mb} % $CHUNK_SIZE_MB)); "
             
-            # Force sync to ensure memory is actually allocated
+            #Memory allocation loop
+            "for i in $(seq 1 $NUM_CHUNKS); do "
+            "  if [ $i -eq $NUM_CHUNKS ] && [ $LAST_CHUNK_SIZE -gt 0 ]; then "
+            "    CURR_CHUNK_SIZE=$LAST_CHUNK_SIZE; "
+            "  else "
+            "    CURR_CHUNK_SIZE=$CHUNK_SIZE_MB; "
+            "  fi; "
+            "  if [ $CURR_CHUNK_SIZE -eq 0 ]; then continue; fi; "
+            
+            #Use dd with urandom to create incompressible data that must stay in memory
+            "  (dd if=/dev/urandom of=/tmp/mem_stress_chunks/chunk_$i bs=1M count=$CURR_CHUNK_SIZE status=none || true) & "
+            "  echo $! >> {background_pids_file}; "
+            "done; "
+            
+            #Wait for allocation to complete
+            "sleep 2; "
+            
+            #Start a background process that periodically touches memory to keep it resident
+            "("
+            "  while true; do "
+            #Read a small amount from each file to keep it active in memory
+            "    find /tmp/mem_stress_chunks -type f -name 'chunk_*' | xargs -I{} dd if={} of=/dev/null bs=4k count=1 status=none 2>/dev/null || true; "
+            "    sleep 5; "  #Touch every 5 seconds
+            "  done "
+            ") & echo $! >> {background_pids_file}; "
+            
+            #Force filesystem sync to ensure all writes hit storage/memory
             "sync; "
-            f"echo 'Memory stress processes started, PIDs in {background_pids_file}'; "
-            f'echo "Memory allocation complete at $(date)" >> /tmp/memory_stress_internal.log; '
-            f"cat /proc/meminfo | grep -E 'MemTotal|MemFree|MemAvailable' >> /tmp/memory_stress_internal.log; "
-            f'echo "Before sleep at $(date)" >> /tmp/memory_stress_internal.log; '
-            f"sleep {duration}; "
-            f'echo "After sleep at $(date)" >> /tmp/memory_stress_internal.log; '
-            f"cat /proc/meminfo | grep -E 'MemTotal|MemFree|MemAvailable' >> /tmp/memory_stress_internal.log; "
-            "cleanup; "
-            f'echo "Script ended at $(date)" >> /tmp/memory_stress_internal.log;'
+            
+            #Check memory after allocation
+            'echo "Memory AFTER allocation:" >> /tmp/memory_stress_internal.log; '
+            'cat /proc/meminfo | grep -E "MemTotal|MemFree|MemAvailable|Cached|Buffers" >> /tmp/memory_stress_internal.log; '
+            
+            #Print success message
+            f'echo "Memory stress processes started with {memory_to_allocate_mb}MB, PIDS in {background_pids_file}" >> /tmp/memory_stress_internal.log; '
+            
+            #Monitor memory during stress at intervals
+            "for i in $(seq 1 5); do "
+            f"  sleep $(({duration} / 5)); "
+            "  echo \"Memory check $i:\" >> /tmp/memory_stress_internal.log; "
+            "  cat /proc/meminfo | grep -E 'MemTotal|MemFree|MemAvailable|Cached|Buffers' >> /tmp/memory_stress_internal.log; "
+            "done; "
+            
+            #Sleep for the remaining time
+            f"REMAINING_SLEEP=$(({duration} - ({duration} / 5) * 5)); "
+            "if [ $REMAINING_SLEEP -gt 0 ]; then sleep $REMAINING_SLEEP; fi; "
+            
+            'echo "Memory BEFORE cleanup:" >> /tmp/memory_stress_internal.log; '
+            'cat /proc/meminfo | grep -E "MemTotal|MemFree|MemAvailable|Cached|Buffers" >> /tmp/memory_stress_internal.log; '
+            
+            #Cleanup
+            'echo "Stress test complete" >> /tmp/memory_stress_internal.log; '
         )
         
         memory_stress_cmd_list = [
             'sh', '-c', command_string
         ]
         
+        #Increase the timeout to account for the file operations
         stdout, stderr, exit_code = exec_command_in_pod(api_client, pod_name, namespace, container_name, duration + 120, command_list=memory_stress_cmd_list)
         
         if exit_code == 0:
             logger.info(f"Memory stress command completed in {namespace}/{pod_name}/{container_name}. Verifying cleanup...")
             
-            # Check if PID file still exists
+            #Check if PID file still exists
             verify_command = [
                 'sh', 
                 '-c', 
@@ -199,34 +243,44 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
             ]
             verify_stdout, verify_stderr, verify_exit = exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=verify_command)
             
-            # Check if memory files are gone
-            verify_files_command = [
+            #Check if memory directory still exists
+            verify_dir_command = [
                 'sh',
                 '-c',
-                f"ls -la {memory_file}* 2>/dev/null || echo 'Memory files removed'"
+                "[ -d /tmp/mem_stress_chunks ] && echo 'Memory chunks directory still exists' || echo 'Memory chunks directory removed'"
             ]
-            verify_files_stdout, verify_files_stderr, verify_files_exit = exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=verify_files_command)
+            verify_dir_stdout, verify_dir_stderr, verify_dir_exit = exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=verify_dir_command)
             
-            if verify_exit == 0 and "PID file removed" in verify_stdout and "Memory files removed" in verify_files_stdout:
+            #Check memory usage statistics to verify effect
+            memory_check = [
+                'sh',
+                '-c',
+                'cat /proc/meminfo | grep -E "MemTotal|MemFree|MemAvailable"'
+            ]
+            memory_stdout, memory_stderr, memory_exit = exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=memory_check)
+            logger.info(f"Memory stats after test: {memory_stdout}")
+            
+            if verify_exit == 0 and "PID file removed" in verify_stdout and "Memory chunks directory removed" in verify_dir_stdout:
                 logger.info(f"Cleanup verified in {container_name} - memory stress resources successfully removed")
                 memory_stress_test_success = True
             else:
-                logger.warning(f"Cleanup may not be complete in {container_name}. PID check: {verify_stdout}, Files check: {verify_files_stdout}")
-                # Try one more cleanup
+                logger.warning(f"Cleanup may not be complete in {container_name}. PID check: {verify_stdout}, Directory check: {verify_dir_stdout}")
+                #Try one more cleanup
                 final_cleanup = [
                     'sh',
                     '-c',
-                    f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'; rm -f {memory_file}*"
+                    f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'; rm -rf /tmp/mem_stress_chunks"
                 ]
                 exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=final_cleanup)
                 memory_stress_test_success = True
         else:
             logger.error(f"Memory stress command failed in {namespace}/{pod_name}/{container_name}. Exit code: {exit_code}, Stderr: {stderr}")
-            # Try emergency cleanup
+            logger.error(f"Command output: {stdout}")
+            #Try emergency cleanup
             emergency_cleanup = [
                 'sh',
                 '-c',
-                f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'; rm -f {memory_file}*"
+                f"[ -f {background_pids_file} ] && xargs -r kill -9 < {background_pids_file} && rm -f {background_pids_file} || echo 'No PID file to clean'; rm -rf /tmp/mem_stress_chunks"
             ]
             exec_command_in_pod(api_client, pod_name, namespace, container_name, 10, command_list=emergency_cleanup)
             memory_stress_test_success = False
@@ -249,7 +303,7 @@ def get_cpu_allocation(api_client, pod_info):
             if container.resources and container.resources.limits and 'cpu' in container.resources.limits:
                 cpu_limit = container.resources.limits['cpu']
                 try:
-                    # Convert CPU limit to numeric value
+                    #Convert CPU limit to numeric value
                     total_cpu_limit += parse_quantity(cpu_limit)
                 except ValueError as e:
                     logger.warning(f"Could not parse CPU limit '{cpu_limit}': {e}")
