@@ -122,7 +122,10 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
+          "exemplar": false,
           "expr": "infra_cpu_usage_percent",
+          "instant": false,
+          "interval": "5",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
@@ -226,6 +229,7 @@
         {
           "editorMode": "code",
           "expr": "infra_mem_usage_percent",
+          "interval": "5",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
@@ -305,6 +309,7 @@
         {
           "editorMode": "code",
           "expr": "chaos_experiment_running",
+          "interval": "5",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -374,6 +379,7 @@
         {
           "editorMode": "code",
           "expr": "seconds_since_last_chaos_event\r\n",
+          "interval": "5",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -437,6 +443,7 @@
         {
           "editorMode": "code",
           "expr": "chaos_events_total_by_type",
+          "interval": "5",
           "legendFormat": "{{chaos_type}}",
           "range": true,
           "refId": "A"
@@ -524,6 +531,7 @@
         {
           "editorMode": "code",
           "expr": "chaos_event_count",
+          "interval": "5",
           "legendFormat": "{{event_type}}",
           "range": true,
           "refId": "A"
@@ -591,6 +599,7 @@
         {
           "editorMode": "code",
           "expr": "infra_metric_total_scrapes",
+          "interval": "5",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -670,6 +679,7 @@
         {
           "editorMode": "code",
           "expr": "mysql_primary_up",
+          "interval": "5",
           "legendFormat": "{{}}",
           "range": true,
           "refId": "A"
@@ -722,7 +732,7 @@
             }
           },
           "mappings": [],
-          "max": 32,
+          "max": 24,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
@@ -765,6 +775,7 @@
         {
           "editorMode": "code",
           "expr": "infra_cpu_usage_absolute",
+          "interval": "5",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
@@ -825,6 +836,7 @@
         {
           "editorMode": "code",
           "expr": "proxy_log_errors_total{event=\"connection_accepted\"}",
+          "interval": "5",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -877,8 +889,8 @@
             }
           },
           "mappings": [],
-          "max": 16,
-          "min": 4,
+          "max": 8,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -891,7 +903,7 @@
               }
             ]
           },
-          "unit": "decgbytes"
+          "unit": "decmbytes"
         },
         "overrides": []
       },
@@ -920,6 +932,7 @@
         {
           "editorMode": "code",
           "expr": "infra_mem_usage_absolute",
+          "interval": "5",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
@@ -1009,6 +1022,7 @@
         {
           "editorMode": "code",
           "expr": "rate(proxy_log_errors_total{event=~\"recv_failed|broken_pipe\"}[5m])\r\n",
+          "interval": "5",
           "legendFormat": "{{event}}",
           "range": true,
           "refId": "A"
