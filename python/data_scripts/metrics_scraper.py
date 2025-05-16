@@ -293,7 +293,7 @@ class StandaloneMetricsScraper:
                     
                     if not resources.get('memory_limit') and self.allocatable_memory is not None:
                         total_containers = len(pod.spec.containers)
-                        # Assuming each container gets an equal share of node resources
+                        #Assuming each container gets an equal share of node resources
                         estimated_memory = self.allocatable_memory / total_containers
                         resources['memory_limit'] = estimated_memory
                         logger.info(f"No memory limits for container {container_name}, using estimated {estimated_memory/1024/1024:.2f}MB (based on node allocatable)")
