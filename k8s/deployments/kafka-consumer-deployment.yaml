@@ -16,6 +16,6 @@ spec:
     spec:
       containers:
         - name: kafka-consumer
-          image: henrose/kafka-consumer:latest
+          image: lucasbaker905/kafka-consumer:latest
           imagePullPolicy: Always
           command: ["python", "kafka_consumer.py"]

@@ -167,42 +167,59 @@ def main():
                 pod_name = params.get("pod_name")
                 pod_namespace = params.get("pod_namespace")
 
-                query = """
+                # Insert node-level metrics
+                node_query = """
                 INSERT INTO infra_metrics (
                     timestamp, source,
                     cpu_percent, cpu_used, mem_percent, mem_used,
                     node_name, pod_name, pod_namespace, container_name, metric_level
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
-                
-                mysql_cursor.execute(query, (
+                mysql_cursor.execute(node_query, (
                     ts, source,
-                    node_metrics.get("cpu_usage", {}).get("percent", 0.0),
-                    node_metrics.get("cpu_usage", {}).get("used", 0.0),
-                    node_metrics.get("memory_usage", {}).get("percent", 0.0),
-                    node_metrics.get("memory_usage", {}).get("used", 0.0),
+                    (node_metrics.get("cpu_usage") or {}).get("percent"),
+                    (node_metrics.get("cpu_usage") or {}).get("used"),
+                    (node_metrics.get("memory_usage") or {}).get("percent"),
+                    (node_metrics.get("memory_usage") or {}).get("used"),
                     node_name, pod_name, pod_namespace, None, 'node'
                 ))
 
-                if container_metrics:
-                    for cname, cdata in container_metrics.items():
-                        mysql_cursor.execute(query, (
-                            ts, source,
-                            cdata.get("cpu_usage", {}).get("percent", 0.0),
-                            cdata.get("cpu_usage", {}).get("used", 0.0),
-                            cdata.get("memory_usage", {}).get("percent", 0.0),
-                            cdata.get("memory_usage", {}).get("used", 0.0),
-                            node_name, pod_name, pod_namespace, cname, 'container'
-                        ))
-                else:
-                    mysql_cursor.execute(query, (
+                # Insert container metrics (real + missing)
+                container_query = """
+                INSERT INTO infra_metrics (
+                    timestamp, source,
+                    cpu_percent, cpu_used, mem_percent, mem_used,
+                    node_name, pod_name, pod_namespace, container_name, metric_level
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                expected_containers = {"mysql"}  # You can add more if needed
+                found_containers = set()
+
+                for cname, cdata in container_metrics.items():
+                    found_containers.add(cname)
+                    mysql_cursor.execute(container_query, (
+                        ts, source,
+                        (cdata.get("cpu_usage") or {}).get("percent"),
+                        (cdata.get("cpu_usage") or {}).get("used"),
+                        (cdata.get("memory_usage") or {}).get("percent"),
+                        (cdata.get("memory_usage") or {}).get("used"),
+                        node_name, pod_name, pod_namespace, cname, 'container'
+                    ))
+
+                # Insert NULLs for any expected containers that are missing
+                missing_containers = expected_containers - found_containers
+                for missing in missing_containers:
+                    mysql_cursor.execute(container_query, (
                         ts, source,
                         None, None, None, None,
-                        node_name, pod_name, pod_namespace, None, 'container'
+                        node_name, pod_name, pod_namespace, missing, 'container'
                     ))
+                    logger.warning(f"Missing expected container '{missing}' — inserting NULL row")
 
                 mysql_conn.commit()
                 logger.info(f"Inserted node and {len(container_metrics)} container metrics for pod {pod_name}")
+
             except Exception as e:
                 logger.error(f"Failed to insert into MySQL: {e}")
 

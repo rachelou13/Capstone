@@ -292,7 +292,7 @@ data:
     \"auto\",\r\n            \"spanNulls\": false,\r\n            \"stacking\": {\r\n
     \             \"group\": \"A\",\r\n              \"mode\": \"none\"\r\n            },\r\n
     \           \"thresholdsStyle\": {\r\n              \"mode\": \"off\"\r\n            }\r\n
-    \         },\r\n          \"mappings\": [],\r\n          \"max\": 8,\r\n          \"min\":
+    \         },\r\n          \"mappings\": [],\r\n          \"max\": 16,\r\n          \"min\":
     0,\r\n          \"thresholds\": {\r\n            \"mode\": \"absolute\",\r\n            \"steps\":
     [\r\n              {\r\n                \"color\": \"green\"\r\n              },\r\n
     \             {\r\n                \"color\": \"red\",\r\n                \"value\":

@@ -42,8 +42,8 @@ def metrics():
         cursor.execute("""
             SELECT AVG(cpu_percent) AS avg_cpu, AVG(mem_percent) AS avg_mem, COUNT(*) as total
             FROM infra_metrics
-            WHERE metric_level = 'container'
-              AND container_name = 'mysql'
+            WHERE metric_level = 'node'
+              AND pod_name = 'mysql'
         """)
         row = cursor.fetchone()
         if row:
@@ -63,15 +63,14 @@ def metrics():
             cursor.execute("""
                 SELECT *
                 FROM infra_metrics
-                WHERE metric_level = 'container'
+                WHERE metric_level = 'node'
                   AND pod_name = %s
-                  AND container_name = %s
                 ORDER BY timestamp DESC
                 LIMIT 1
-            """, (pod, container))
+            """, (pod,))
 
             row = cursor.fetchone()
-            labels = f'pod="{pod}", container="{container}"'
+            labels = f'pod="{pod}"'
 
             if row and row["cpu_percent"] is not None:
                 lines.append(f'infra_cpu_usage_percent{{{labels}}} {row["cpu_percent"]}')
