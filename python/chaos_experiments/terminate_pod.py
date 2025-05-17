@@ -290,6 +290,12 @@ def main():
         
         #Delete the pod
         deletion_successful = delete_pod(api_client, pod_name, namespace)
+
+        if not deletion_successful and controller_type and controller_name and original_replicas is not None:
+            logger.warning(f"Pod deletion failed, waiting {wait_duration}s before scaling {controller_type} {controller_name} back to {original_replicas}")
+            time.sleep(wait_duration)
+            scale_controller(api_client, controller_type, controller_name, namespace, original_replicas)
+
         
         if deletion_successful:
             #Wait for specified duration
