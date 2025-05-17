@@ -288,32 +288,31 @@ def main():
             #Give Kubernetes a moment to process the scaling
             time.sleep(5)
         
-        #Delete the pod
-        deletion_successful = delete_pod(api_client, pod_name, namespace)
+        apps_v1 = client.AppsV1Api(api_client)
 
-        if not deletion_successful and controller_type and controller_name and original_replicas is not None:
-            logger.warning(f"Pod deletion failed, waiting {wait_duration}s before scaling {controller_type} {controller_name} back to {original_replicas}")
-            time.sleep(wait_duration)
-            scale_controller(api_client, controller_type, controller_name, namespace, original_replicas)
+        # Scale down to 0
+        apps_v1.patch_namespaced_stateful_set(
+            name="mysql-primary",
+            namespace="default",
+            body={"spec": {"replicas": 0}}
+        )
+        logger.info("💥 Scaled mysql-primary to 0")
 
-        
-        if deletion_successful:
-            #Wait for specified duration
-            logger.info(f"Waiting for {wait_duration} seconds before restart")
-            time.sleep(wait_duration)
-            
-            #Restart the pod or controller
-            if controller_type and controller_name:
-                #Scale back to original replicas
-                restart_successful = scale_controller(api_client, controller_type, controller_name, namespace, original_replicas) is not None
-                
-                #Add restart annotation to ensure fresh pods
-                if restart_successful:
-                    restart_successful = restart_controller(api_client, controller_type, controller_name, namespace)
-            else:
-                #For pods not managed by controllers
-                logger.info("No controller, waiting for pod to be automatically recreated")
-                restart_successful = wait_for_pod_recreation(api_client, pod_name, namespace)
+        # Wait for specified duration
+        logger.info(f"⏳ Waiting for {wait_duration} seconds before scaling up...")
+        time.sleep(wait_duration)
+
+        # Scale up to 1
+        apps_v1.patch_namespaced_stateful_set(
+            name="mysql-primary",
+            namespace="default",
+            body={"spec": {"replicas": 1}}
+        )
+        logger.info("🚀 Scaled mysql-primary back to 1")
+
+        # Optional: restart annotation
+        restart_successful = restart_controller(api_client, "StatefulSet", "mysql-primary", "default")
+
     except Exception as e:
         logger.error(f"Unexpected error during pod deletion experiment: {e}")
         #Ensure we scale back if there was an error
