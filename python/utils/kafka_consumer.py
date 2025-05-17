@@ -167,7 +167,7 @@ def main():
                 pod_name = params.get("pod_name")
                 pod_namespace = params.get("pod_namespace")
 
-                node_query = """
+                query = """
                 INSERT INTO infra_metrics (
                     timestamp, source,
                     cpu_percent, cpu_used, mem_percent, mem_used,
@@ -175,7 +175,7 @@ def main():
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 
-                mysql_cursor.execute(node_query, (
+                mysql_cursor.execute(query, (
                     ts, source,
                     node_metrics.get("cpu_usage", {}).get("percent", 0.0),
                     node_metrics.get("cpu_usage", {}).get("used", 0.0),
@@ -185,15 +185,8 @@ def main():
                 ))
 
                 if container_metrics:
-                    container_query = """
-                    INSERT INTO infra_metrics (
-                        timestamp, source,
-                        cpu_percent, cpu_used, mem_percent, mem_used,
-                        node_name, pod_name, pod_namespace, container_name, metric_level
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """
                     for cname, cdata in container_metrics.items():
-                        mysql_cursor.execute(container_query, (
+                        mysql_cursor.execute(query, (
                             ts, source,
                             cdata.get("cpu_usage", {}).get("percent", 0.0),
                             cdata.get("cpu_usage", {}).get("used", 0.0),
@@ -201,6 +194,12 @@ def main():
                             cdata.get("memory_usage", {}).get("used", 0.0),
                             node_name, pod_name, pod_namespace, cname, 'container'
                         ))
+                else:
+                    mysql_cursor.execute(query, (
+                        ts, source,
+                        None, None, None, None,
+                        node_name, pod_name, pod_namespace, None, 'container'
+                    ))
 
                 mysql_conn.commit()
                 logger.info(f"Inserted node and {len(container_metrics)} container metrics for pod {pod_name}")
