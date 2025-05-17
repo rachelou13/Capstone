@@ -30,30 +30,118 @@ def delete_pod(api_client, pod_name, namespace):
         logger.error(f"Failed to delete pod {namespace}/{pod_name}: {e}")
         return False
 
-def restart_deployment(api_client, deployment_name, namespace):
+def get_pod_controller(api_client, pod_name, namespace):
+    try:
+        core_v1 = client.CoreV1Api(api_client)
+        pod = core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
+        
+        #Check for owner references
+        if pod.metadata.owner_references:
+            for ref in pod.metadata.owner_references:
+                if ref.kind == "ReplicaSet":
+                    #Find the deployment that owns this ReplicaSet
+                    apps_v1 = client.AppsV1Api(api_client)
+                    rs = apps_v1.read_namespaced_replica_set(name=ref.name, namespace=namespace)
+                    if rs.metadata.owner_references:
+                        for rs_ref in rs.metadata.owner_references:
+                            if rs_ref.kind == "Deployment":
+                                return "Deployment", rs_ref.name
+                    return None, None
+                elif ref.kind == "StatefulSet":
+                    return "StatefulSet", ref.name
+        
+        return None, None
+    except Exception as e:
+        logger.error(f"Failed to determine pod controller: {e}")
+        return None, None
+
+def scale_controller(api_client, controller_type, controller_name, namespace, replicas):
     try:
         apps_v1 = client.AppsV1Api(api_client)
-        logger.info(f"Restarting deployment {namespace}/{deployment_name}")
+        logger.info(f"Scaling {controller_type} {namespace}/{controller_name} to {replicas} replicas")
         
-        #Get the deployment
-        deployment = apps_v1.read_namespaced_deployment(name=deployment_name, namespace=namespace)
+        if controller_type == "Deployment":
+            #Get current deployment
+            controller = apps_v1.read_namespaced_deployment(name=controller_name, namespace=namespace)
+            original_replicas = controller.spec.replicas
+            
+            #Scale to specified count
+            controller.spec.replicas = replicas
+            apps_v1.patch_namespaced_deployment(
+                name=controller_name,
+                namespace=namespace,
+                body=controller
+            )
+        elif controller_type == "StatefulSet":
+            #Get current statefulset
+            controller = apps_v1.read_namespaced_stateful_set(name=controller_name, namespace=namespace)
+            original_replicas = controller.spec.replicas
+            
+            #Scale to specified count
+            controller.spec.replicas = replicas
+            apps_v1.patch_namespaced_stateful_set(
+                name=controller_name,
+                namespace=namespace,
+                body=controller
+            )
+        else:
+            logger.error(f"Unsupported controller type: {controller_type}")
+            return None
+            
+        return original_replicas
+    except Exception as e:
+        logger.error(f"Failed to scale {controller_type} {namespace}/{controller_name}: {e}")
+        return None
+
+def restart_controller(api_client, controller_type, controller_name, namespace):
+    try:
+        apps_v1 = client.AppsV1Api(api_client)
+        logger.info(f"Restarting {controller_type} {namespace}/{controller_name}")
         
-        #Add restart annotation
-        if deployment.spec.template.metadata.annotations is None:
-            deployment.spec.template.metadata.annotations = {}
-        
-        deployment.spec.template.metadata.annotations["kubectl.kubernetes.io/restartedAt"] = datetime.now().isoformat()
-        
-        #Patch the deployment to trigger rollout
-        apps_v1.patch_namespaced_deployment(
-            name=deployment_name,
-            namespace=namespace,
-            body=deployment
-        )
+        if controller_type == "Deployment":
+            #Get the deployment
+            controller = apps_v1.read_namespaced_deployment(name=controller_name, namespace=namespace)
+            
+            #Add restart annotation
+            if controller.spec.template.metadata.annotations is None:
+                controller.spec.template.metadata.annotations = {}
+            
+            controller.spec.template.metadata.annotations["kubectl.kubernetes.io/restartedAt"] = datetime.now().isoformat()
+            
+            #Patch the deployment
+            apps_v1.patch_namespaced_deployment(
+                name=controller_name,
+                namespace=namespace,
+                body=controller
+            )
+        elif controller_type == "StatefulSet":
+            #Get the statefulset
+            controller = apps_v1.read_namespaced_stateful_set(name=controller_name, namespace=namespace)
+            
+            #Add restart annotation
+            if controller.spec.template.metadata.annotations is None:
+                controller.spec.template.metadata.annotations = {}
+            
+            controller.spec.template.metadata.annotations["kubectl.kubernetes.io/restartedAt"] = datetime.now().isoformat()
+            
+            #Patch the statefulset
+            apps_v1.patch_namespaced_stateful_set(
+                name=controller_name,
+                namespace=namespace,
+                body=controller
+            )
+        else:
+            logger.error(f"Unsupported controller type: {controller_type}")
+            return False
+            
         return True
     except Exception as e:
-        logger.error(f"Failed to restart deployment {namespace}/{deployment_name}: {e}")
+        logger.error(f"Failed to restart {controller_type} {namespace}/{controller_name}: {e}")
         return False
+
+def restart_deployment(api_client, deployment_name, namespace):
+    """Legacy method kept for compatibility"""
+    return restart_controller(api_client, "Deployment", deployment_name, namespace)
 
 def wait_for_pod_recreation(api_client, pod_name, namespace, timeout=120):
     core_v1 = client.CoreV1Api(api_client)
@@ -76,6 +164,7 @@ def wait_for_pod_recreation(api_client, pod_name, namespace, timeout=120):
     return False
 
 def main():
+    logger.info("Running terminate pod experiment: V2")
     parser = argparse.ArgumentParser(description="Delete and restart a pod after specified duration")
     parser.add_argument(
         "-p",
@@ -131,6 +220,9 @@ def main():
     #Initialize success trackers
     deletion_successful = False
     restart_successful = False
+    original_replicas = None
+    controller_type = None
+    controller_name = None
 
     #K8s client setup
     try:
@@ -152,6 +244,20 @@ def main():
             }, experiment_id)
         return
 
+    #If deployment_name is provided, use it as Deployment type
+    #Else, auto-detect the controller
+    if deployment_name:
+        controller_type = "Deployment"
+        controller_name = deployment_name
+        logger.info(f"Using provided deployment: {deployment_name}")
+    else:
+        # Auto-detect controller only if deployment_name is None
+        controller_type, controller_name = get_pod_controller(api_client, pod_name, namespace)
+        if controller_type and controller_name:
+            logger.info(f"Auto-detected pod controller: {controller_type}/{controller_name}")
+        else:
+            logger.info("No deployment provided and no controller detected")
+
     #Send start event to kafka
     start_event = {
         "timestamp": start_time.isoformat(),
@@ -162,6 +268,8 @@ def main():
             "pod_name": pod_name,
             "namespace": namespace,
             "deployment_name": deployment_name,
+            "controller_type": controller_type,
+            "controller_name": controller_name,
             "wait_duration": wait_duration
         }
     }
@@ -170,8 +278,17 @@ def main():
         logger.warning(f"Failed to send START event to Kafka for experiment {experiment_id}")
 
     try:
+        #If we have a controller, scale it to 0 first
+        if controller_type and controller_name:
+            original_replicas = scale_controller(api_client, controller_type, controller_name, namespace, 0)
+            
+            if original_replicas is None:
+                raise Exception(f"Failed to scale {controller_type} to zero")
+                
+            #Give Kubernetes a moment to process the scaling
+            time.sleep(5)
+        
         #Delete the pod
-        logger.info(f"Deleting pod {namespace}/{pod_name}")
         deletion_successful = delete_pod(api_client, pod_name, namespace)
         
         if deletion_successful:
@@ -179,15 +296,27 @@ def main():
             logger.info(f"Waiting for {wait_duration} seconds before restart")
             time.sleep(wait_duration)
             
-            #Restart the pod or deployment
-            if deployment_name:
-                restart_successful = restart_deployment(api_client, deployment_name, namespace)
+            #Restart the pod or controller
+            if controller_type and controller_name:
+                #Scale back to original replicas
+                restart_successful = scale_controller(api_client, controller_type, controller_name, namespace, original_replicas) is not None
+                
+                #Add restart annotation to ensure fresh pods
+                if restart_successful:
+                    restart_successful = restart_controller(api_client, controller_type, controller_name, namespace)
             else:
-                #For statefulsets or pods not managed by deployments
-                logger.info("No deployment specified, waiting for pod to be automatically recreated")
+                #For pods not managed by controllers
+                logger.info("No controller, waiting for pod to be automatically recreated")
                 restart_successful = wait_for_pod_recreation(api_client, pod_name, namespace)
     except Exception as e:
         logger.error(f"Unexpected error during pod deletion experiment: {e}")
+        #Ensure we scale back if there was an error
+        if controller_type and controller_name and original_replicas is not None:
+            try:
+                scale_controller(api_client, controller_type, controller_name, namespace, original_replicas)
+            except Exception as scale_error:
+                logger.error(f"Error scaling back controller after failure: {scale_error}")
+                
         if kafka_prod and kafka_prod.connected:
             kafka_prod.send_event({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -212,7 +341,10 @@ def main():
             "success": deletion_successful and restart_successful,
             "details": {
                 "deletion_successful": deletion_successful,
-                "restart_successful": restart_successful
+                "restart_successful": restart_successful,
+                "controller_type": controller_type,
+                "controller_name": controller_name,
+                "original_replicas": original_replicas
             },
             "duration": duration
         }

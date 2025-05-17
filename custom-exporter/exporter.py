@@ -2,8 +2,13 @@ from flask import Flask, Response
 import mysql.connector
 from pymongo import MongoClient
 import os
+import logging
 
 from datetime import datetime, timezone
+
+#Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -34,19 +39,21 @@ def metrics():
         """)
         row = cursor.fetchone()
         if row and row["cpu_percent"] is not None:
+            logger.info("mysql_primary is up")
             lines.append("mysql_primary_up 1")
         else:
+            logger.info("mysql_primary is down")
             lines.append("mysql_primary_up 0")
 
         # === 2. Summary stats for mysql container ===
         cursor.execute("""
             SELECT AVG(cpu_percent) AS avg_cpu, AVG(mem_percent) AS avg_mem, COUNT(*) as total
             FROM infra_metrics
-            WHERE metric_level = 'node'
-              AND pod_name = 'mysql'
+            WHERE metric_level = 'container'
         """)
         row = cursor.fetchone()
         if row:
+            logger.info(f'SUMMARY VALUES: avg_cpu = {row["avg_cpu"]}, avg_mem = {row["avg_mem"]}, total scrapes = {row["total"]}')
             lines.append(f'infra_avg_cpu_percent {row["avg_cpu"] or 0:.2f}')
             lines.append(f'infra_avg_mem_percent {row["avg_mem"] or 0:.2f}')
             lines.append(f'infra_metric_total_scrapes {row["total"] or 0}')
@@ -63,7 +70,7 @@ def metrics():
             cursor.execute("""
                 SELECT *
                 FROM infra_metrics
-                WHERE metric_level = 'node'
+                WHERE metric_level = 'container'
                   AND pod_name = %s
                 ORDER BY timestamp DESC
                 LIMIT 1
@@ -73,22 +80,26 @@ def metrics():
             labels = f'pod="{pod}"'
 
             if row and row["cpu_percent"] is not None:
+                logger.info(f'CONTAINER CPU %: {row["cpu_percent"]}')
                 lines.append(f'infra_cpu_usage_percent{{{labels}}} {row["cpu_percent"]}')
             else:
                 lines.append(f'infra_cpu_usage_percent{{{labels}}} 0')
 
             if row and row["cpu_used"] is not None:
+                logger.info(f'CONTAINER CPU USAGE: {row["cpu_used"]}')
                 lines.append(f'infra_cpu_usage_absolute{{{labels}}} {row["cpu_used"]}')
             else:
                 lines.append(f'infra_cpu_usage_absolute{{{labels}}} 0')
 
 
             if row and row["mem_percent"] is not None:
+                logger.info(f'CONTAINER MEM %: {row["mem_percent"]}')
                 lines.append(f'infra_mem_usage_percent{{{labels}}} {row["mem_percent"]}')
             else:
                 lines.append(f'infra_mem_usage_percent{{{labels}}} 0')
 
             if row and row["mem_used"] is not None:
+                logger.info(f'CONTAINER MEM USAGE: {row["mem_used"]}')
                 mem_used_gb = row["mem_used"] / 1024 / 1024 / 1024
                 lines.append(f'infra_mem_usage_absolute{{{labels}}} {mem_used_gb:.2f}')
             else:

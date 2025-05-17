@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: capstone-exporter
-          image: lucasbaker905/capstone-exporter:latest
+          image: henrose/capstone-exporter:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 5000

@@ -8,7 +8,7 @@ from kubernetes.stream import stream
 
 from python.utils.kafka_producer import CapstoneKafkaProducer
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def exec_command_in_pod(api_client, pod_name, namespace, container_name, duration, command_list):

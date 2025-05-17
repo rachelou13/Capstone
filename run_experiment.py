@@ -100,6 +100,7 @@ def select_pod(k8s_client, pod_name=""):
         
         if not matching_pods:
             print("No pods match that name. Please try again.")
+            pod_name=""
             continue
             
         if len(matching_pods) == 1:
@@ -369,8 +370,6 @@ def main():
         display_menu()
         
         choice = input("Select an option: ").strip()
-
-        pod_name = "python-proxy"
         
         if choice == "0":
             print("\nExiting. Goodbye!")
@@ -383,7 +382,7 @@ def main():
                     
         #Run experiment
         if choice == "4":
-            pod_info = select_pod(k8s_client, pod_name=pod_name)
+            pod_info = select_pod(k8s_client, pod_name="python-proxy")
             run_network_partition(pod_info)
         else:
             #Select target pod
