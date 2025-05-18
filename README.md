@@ -9,7 +9,51 @@
 ![Monitoring](https://img.shields.io/badge/Monitoring-Prometheus-E6522C?logo=prometheus)
 ![Monitoring](https://img.shields.io/badge/Visualization-Grafana-F46800?logo=grafana)
 
+## Project Summary
 
-Capstone Project of the February 2025 cohort of the PNC/TEKsystems Early Career SRE 
+Capstone Project of the February 2025 cohort of the PNC/TEKsystems Early Career SRE bootcamp. This is a disaster recovery testing platform that offers a CLI to run multiple types of failure simulations built-in recovery automation and system health monitoring/visualization. 
+
+## Quick Links
+
+## Prequisites
+
+Before beginning, you must have the following installed:
+* Docker Desktop with Kubernetes
+* Python
+* Pip (Package Manager)
+
+If you do not, follow the instructions below
+### Docker Desktop
+
+### Kubernetes
+
+### Python
+
+### Pip
+
+## Environment Set-Up
+
+### Installing Required Python Packages 
+
+### Setting Python Virtual Environment (Optional)
+
+### Deploying the Cluster
+
+### Viewing and Managing Kafka Topics
+
+## Usage
+
+### Running Experiments
+
+### Viewing the Dashboard
+
+### Querying MongoDB Directly
+
+### Querying MySQL Directly
+
+## Credits
+Designed and built by Lucas Baker, Rachel Cox, Henry Hewitt, and Lukas McCain for the the February 2025 cohort of the PNC/TEKsystems Early Career SRE bootcamp. 
+
+
 
 
