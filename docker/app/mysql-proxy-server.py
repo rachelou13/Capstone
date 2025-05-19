@@ -307,8 +307,53 @@ def ensure_replica_user():
     except Error as e:
         print(f"Failed to ensure replica_user: {e}")
 
+#*****************************************************************************************************************************************************
+def seed_bank_transactions():
+    try:
+        conn = mysql.connector.connect(**DB_CONFIG)
+        cursor = conn.cursor()
 
+        # Create table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bank_transactions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                account_number VARCHAR(20),
+                transaction_type ENUM('DEPOSIT', 'WITHDRAWAL', 'TRANSFER'),
+                amount DECIMAL(10,2),
+                transaction_date DATETIME,
+                description VARCHAR(255)
+            );
+        """)
+
+        # Check if records already exist
+        cursor.execute("SELECT COUNT(*) FROM bank_transactions;")
+        count = cursor.fetchone()[0]
+
+        if count == 0:
+            # Insert sample data
+            cursor.executemany("""
+                INSERT INTO bank_transactions (account_number, transaction_type, amount, transaction_date, description)
+                VALUES (%s, %s, %s, %s, %s)
+            """, [
+                ('1234567890', 'DEPOSIT', 1000.00, '2025-05-19 09:15:00', 'Initial deposit'),
+                ('1234567890', 'WITHDRAWAL', 200.00, '2025-05-20 14:30:00', 'ATM withdrawal'),
+                ('9876543210', 'TRANSFER', 500.00, '2025-05-21 11:00:00', 'Transfer to savings'),
+                ('5555555555', 'DEPOSIT', 750.50, '2025-05-22 16:45:00', 'Paycheck'),
+                ('1234567890', 'WITHDRAWAL', 120.75, '2025-05-23 08:05:00', 'Online purchase')
+            ])
+            conn.commit()
+            print("Sample bank transactions inserted.")
+        else:
+            print("Bank transactions already seeded. Skipping.")
+
+        conn.close()
+
+    except Error as e:
+        print(f"Error seeding bank transactions: {e}")
+
+#*****************************************************************************************************************************************************
 if __name__ == "__main__":
     ensure_replica_user()
+    seed_bank_transactions()
     threading.Thread(target=monitor_and_failover, daemon=True).start()
     start_proxy()
