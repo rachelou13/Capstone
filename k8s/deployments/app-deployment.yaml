@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: python-proxy-container
-          image: henrose/python-proxy-app:latest
+          image: lukasmccain0/python-proxy-app:latest
           imagePullPolicy: Always 
           securityContext:
             privileged: true
