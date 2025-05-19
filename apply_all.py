@@ -101,7 +101,7 @@ def create_metrics_scraper_config(pod_info, scrape_interval=5):
     try:
         print("Creating metrics scraper configuration...")
         
-        # Create a ConfigMap for storing pod info - add a proper name field
+        #Create a ConfigMap for storing pod info - add a proper name field
         configmap_yaml = f"""
             apiVersion: v1
             kind: ConfigMap
@@ -113,11 +113,13 @@ def create_metrics_scraper_config(pod_info, scrape_interval=5):
                 TARGET_POD_UID: "{pod_info['uid']}"
                 SCRAPE_INTERVAL: "{scrape_interval}"
         """
-        # Save ConfigMap YAML to a temporary file
+        #ADD CHMOD LINE TO ENSURE WRITE PERMISSIONS
+        
+        #Save ConfigMap YAML to a temporary file
         with open('/tmp/metrics-scraper-config.yaml', 'w') as f:
             f.write(configmap_yaml)
         
-        # Apply the ConfigMap
+        #Apply the ConfigMap
         try:
             result = subprocess.run(
                 ["kubectl", "apply", "-f", "/tmp/metrics-scraper-config.yaml"],
