@@ -291,7 +291,24 @@ def configure_as_replica(replica_host, master_host):
         print(f"Failed to configure {replica_host} as replica: {e}")
 
 #*****************************************************************************************************************************************************
+def ensure_replica_user():
+    try:
+        conn = mysql.connector.connect(
+            host=PRIMARY_HOST,
+            user="root",
+            password="admin"
+        )
+        cursor = conn.cursor()
+        cursor.execute("CREATE USER IF NOT EXISTS 'replica_user'@'%' IDENTIFIED BY 'replica_password';")
+        cursor.execute("GRANT REPLICATION SLAVE ON *.* TO 'replica_user'@'%';")
+        cursor.execute("FLUSH PRIVILEGES;")
+        conn.close()
+        print("Ensured replica_user setup on primary.")
+    except Error as e:
+        print(f"Failed to ensure replica_user: {e}")
+
 
 if __name__ == "__main__":
+    ensure_replica_user()
     threading.Thread(target=monitor_and_failover, daemon=True).start()
     start_proxy()
