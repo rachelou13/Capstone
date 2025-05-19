@@ -14,8 +14,12 @@
 Capstone Project of the February 2025 cohort of the PNC/TEKsystems Early Career SRE bootcamp. This is a disaster recovery testing platform that offers a CLI to run multiple types of failure simulations built-in recovery automation and system health monitoring/visualization. 
 
 ## Quick Links
+[Prerequisite Installation](#prequisite-installation) \
+[Environment Set-Up](#environment-set-up) \
+[Usage](#usage) \
+[Credits](#credits)
 
-## Prequisites
+# Prequisite Installation
 
 Before beginning, you must have the following installed:
 * Docker Desktop with Kubernetes
@@ -23,35 +27,149 @@ Before beginning, you must have the following installed:
 * Pip (Package Manager)
 
 If you do not, follow the instructions below
-### Docker Desktop
+## Docker Desktop
+1. Navigate to [Docs.Docker.com](https://www.docker.com/products/docker-desktop/)
+2. Download the correct installation for your machine
+3. Run the executable installer
+4. Follow the set-up instructions. The recommended defaults will work for this project. 
+5. Restart your machine if necessary
 
-### Kubernetes
+## Kubernetes
+1. Start up Docker
+2. Click on the Settings icon in the top toolbar
+3. Click on 'Kubernetes' in the left sidebar. 
+4. Turn on the 'Enable Kubernetes' option 
+5. Click 'Apply & Restart' 
+6. Click 'Install'
 
-### Python
+Once installation has finished, you should see 'Kubernetes running' along the bottom of the application window.
 
-### Pip
+## Python
+1. Navigate to [Python.org](https://www.python.org/downloads/)
+2. Download the correct installation for your machine
+3. Run the executable installer
+4. Follow the set-up instructions. The recommended defaults will work for this project.
+5. Restart your machine if necessary
 
-## Environment Set-Up
+## Pip
+Once Python is installed, run the following command to ensure Pip is installed:
+```sh
+python -m pip install --upgrade pip
+```
 
-### Installing Required Python Packages 
+# Environment Set-Up
 
-### Setting Python Virtual Environment (Optional)
+## Installing Required Python Packages
+Skip this section and go to the next section if you would prefer to set up a virtual environment. 
 
-### Deploying the Cluster
+1. Navigate to the main project folder on your local machine
+2. Run ```ls``` to ensure that you are in the folder containing requirements.txt
+3. Run ```pip install -r requirements.txt```
 
-### Viewing and Managing Kafka Topics
+## Setting Python Virtual Environment (Optional)
+1. Navigate to the main project folder on your local machine
+2. Run ```ls``` to ensure that you are in the folder containing requirements.txt
+3. Run ```python -m venv .venv```
+4. Run ```source .venv/Scripts/activate```
+5. You are now in your virtual environment and should see (.venv) at the start of each line in your terminal
+6. Run ```python -m pip install -r requirements.txt``` \
+    a. You may use ```pip install -r requirements.txt``` however, using ```python -m``` as a preface ensures you are using the ```pip``` associated with the currently active Python interpreter (the one inside the virtual environment). This is a good practice. 
+7. Check the correct packages are installed by running ```python -m pip freeze```
+### Setting Your Virtual Environment in VS Code
+1. Open your main project folder in VS Code
+2. Open the Command Palette with the shortcut Ctrl+Shift+P
+3. Search for and select 'Python: Select Interpreter'
+4. Select 'Enter interpreter path...'
+5. Select 'Find...'
+6. Browse to '.venv\Scripts' within your capstone folder and select 'python.exe'
+### Exiting the Virtual Environment
+1. When you are done working in the virtual environment, simply run ```deactivate``` in your terminal
 
-## Usage
+## Deploying the Cluster
+Once all prerequisites are installed and Docker Desktop with Kubernetes is running, navigate to the main project folder and run the apply_all.py file using the following command:
+```sh
+python apply_all.py
+```
+1. Press Enter to monitor the default pod with the infrastructure metrics scraper
+2. Enter 'y' to confirm
+3. Press Enter to use the default scrape interval of 5 seconds, or enter a different integer value
 
-### Running Experiments
+## Viewing and Managing Kafka Topics
+Kafka in this cluster is configured to automatically create the required topics. However, the below commands can be used to view and manage the topics as well as test the broker in Kafka if needed.
 
-### Viewing the Dashboard
+```sh
+# Confirm the Kafka broker is running
+kubectl get pods -l app=kafka
 
-### Querying MongoDB Directly
+# Launch Kafka Client Pod
+# You should get a shell prompt inside the Kafka container
+kubectl run -it kafka-client --image=bitnami/kafka:3.6.0 --rm --restart=Never -- bash
 
-### Querying MySQL Directly
+# List Topics
+kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9094 --list
 
-## Credits
+# Create Test Topic
+kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9094 --create --topic test-topic --partitions 1 --replication-factor 1
+
+# Send a Test Message
+kafka-console-producer.sh --broker-list kafka-0.kafka-headless.default.svc.cluster.local:9094 --topic test-topic
+>hello from kafka!
+# Press `Ctrl + C` to exit the producer
+
+# Using Console Consumer
+kafka-console-consumer.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.local:9094 --topic
+# Press `Ctrl + C` to exit the consumer
+``` 
+
+### Controlling Topic Creation (Optional)
+
+By default, Kafka is configured to **automatically create topics** when a producer or consumer references a topic name that doesn't exist.
+
+This can be convenient during development, but you may want to **disable it** in certain scenarios.
+
+#### Disable Auto Topic Creation
+
+You can prevent Kafka from creating topics automatically by setting the following environment variable in your Kafka manifest (e.g., `kafka-statefulset.yaml`):
+
+```yaml
+- name: KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE
+  value: "false"
+```
+
+# Usage
+Your prerequsites are installed, your environment is set up, and your Kubernetes cluster is running, you are ready to start using the application!
+
+## Running Experiments
+In the main project folder, run the following command:
+```sh
+python run_experiment.py
+```
+
+Follow the prompts and execute the experiments you would like. Entering 0 at any point will return you to the main menu.
+
+### Examples
+Running **Network Partition** experiment with default parameters:
+
+```sh
+
+```
+
+Running **Resource Exhaustion** experiment with custom parameters:
+
+```sh
+
+```
+
+## Viewing the Dashboard
+
+
+## Querying MongoDB Directly
+
+
+## Querying MySQL Directly
+
+
+# Credits
 Designed and built by Lucas Baker, Rachel Cox, Henry Hewitt, and Lukas McCain for the the February 2025 cohort of the PNC/TEKsystems Early Career SRE bootcamp. 
 
 
