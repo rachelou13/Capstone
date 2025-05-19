@@ -162,12 +162,43 @@ Running **Resource Exhaustion** experiment with custom parameters:
 
 ## Viewing the Dashboard
 
+### *Make sure your kubernetes cluster is up and running*
+
+1. Open a new tab on your browser and type in "localhost:32000"
+2. Username: admin, Password: admin
+3. Click on "Dashboards" on the left hand side
+4. Click on "Capstone"
+5. Click on "Database Recovery System"
+
+Done!
 
 ## Querying MongoDB Directly
 
+### *Make sure your kubernetes cluster is up and running*
+In your terminal...
+1. Type in this command: `kubectl get pods`
+2. Locate the mongodb pod and copy the name
+3. Type in this command: `kubectl exec -it <mongodb pod name> -- sh`
+4. Log into mongosh using this command: `mongosh -u root -p`
+5. When prompted, type in the password: `root`
+6. From there, you can see databases with: `show dbs`
+7. Type: `use metrics_db`
+8. From there, you can see collections with: `show collections`
+9. To view a collection, type: `db.<collection name>.find().pretty()`
+10. At this point you can enter your query
 
 ## Querying MySQL Directly
 
+### *Make sure your kubernetes cluster is up and running*
+In your terminal...
+3. Type in this command: `kubectl exec -it mysql-summary-records-0 -- sh`
+4. Log into mongosh using this command: `mysql -u root -p`
+5. When prompted, type in the password: `root`
+6. From there, you can see databases with: `show databases;`
+7. Type: `use summary_db;`
+8. From there, you can see tables with: `show tables;`
+9. To view a table, type: `select * from <table name>;`
+10. At this point you can enter your query
 
 # Credits
 Designed and built by Lucas Baker, Rachel Cox, Henry Hewitt, and Lukas McCain for the the February 2025 cohort of the PNC/TEKsystems Early Career SRE bootcamp. 
