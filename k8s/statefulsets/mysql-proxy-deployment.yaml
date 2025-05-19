@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: mysql
-          image: lukasmccain0/mysql:8.0
+          image: lukasmccain0/mysql-primary:8.0
           ports:
             - containerPort: 3306
           env:
@@ -33,8 +33,11 @@ spec:
               value: "capstone_db"
             - name: MYSQL_ROOT_HOST
               value: "%"
-            - name: MYSQL_EXTRA_FLAGS
-              value: "--gtid-mode=ON --enforce-gtid-consistency=ON --log-bin=mysql-bin"
+          args:
+            - "--gtid-mode=ON"
+            - "--enforce-gtid-consistency=ON"
+            - "--log-bin=mysql-bin"
+            - "--server-id=1"
           volumeMounts:
             - name: mysql-data
               mountPath: /var/lib/mysql
@@ -73,7 +76,7 @@ spec:
     spec:
       containers:
         - name: mysql
-          image: lukasmccain0/mysql:8.0
+          image: lukasmccain0/mysql-replica:8.0
           ports:
             - containerPort: 3306
           env:
@@ -83,8 +86,11 @@ spec:
               value: "capstone_db"
             - name: MYSQL_ROOT_HOST
               value: "%"
-            - name: MYSQL_EXTRA_FLAGS
-              value: "--gtid-mode=ON --enforce-gtid-consistency=ON --log-bin=mysql-bin"
+          args:
+            - "--gtid-mode=ON"
+            - "--enforce-gtid-consistency=ON"
+            - "--log-bin=mysql-bin"
+            - "--server-id=2"
           volumeMounts:
             - name: mysql-data
               mountPath: /var/lib/mysql

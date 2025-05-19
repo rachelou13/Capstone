@@ -276,6 +276,7 @@ def configure_as_replica(replica_host, master_host):
         conn = mysql.connector.connect(host=replica_host, user="root", password="admin")
         cursor = conn.cursor()
         cursor.execute("STOP SLAVE;")
+        cursor.execute("RESET SLAVE ALL;")
         cursor.execute(f"""
             CHANGE MASTER TO
               MASTER_HOST='{master_host}',
