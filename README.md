@@ -187,18 +187,26 @@ In your terminal...
 9. To view a collection, type: `db.<collection name>.find().pretty()`
 10. At this point you can enter your query
 
+### Examples
+```sh
+```
+
 ## Querying MySQL Directly
 
 ### *Make sure your kubernetes cluster is up and running*
 In your terminal...
-3. Type in this command: `kubectl exec -it mysql-summary-records-0 -- sh`
-4. Log into mongosh using this command: `mysql -u root -p`
-5. When prompted, type in the password: `root`
-6. From there, you can see databases with: `show databases;`
-7. Type: `use summary_db;`
-8. From there, you can see tables with: `show tables;`
-9. To view a table, type: `select * from <table name>;`
-10. At this point you can enter your query
+1. Type in this command: `kubectl exec -it mysql-summary-records-0 -- sh`
+2. Log into mongosh using this command: `mysql -u root -p`
+3. When prompted, type in the password: `root`
+4. From there, you can see databases with: `show databases;`
+5. Type: `use summary_db;`
+6. From there, you can see tables with: `show tables;`
+7. To view a table, type: `select * from <table name>;`
+8. At this point you can enter your query
+
+### Examples
+```sh
+```
 
 # Credits
 Designed and built by Lucas Baker, Rachel Cox, Henry Hewitt, and Lukas McCain for the the February 2025 cohort of the PNC/TEKsystems Early Career SRE bootcamp. 
