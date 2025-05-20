@@ -51,6 +51,13 @@ producer = init_kafka_producer()
 
 def connect_to_database(host):
     try:
+        # Resolve hostname first to catch DNS issues
+        socket.gethostbyname(host)
+    except socket.gaierror as e:
+        print(f"DNS resolution failed for {host}: {e}")
+        return None
+
+    try:
         conn = mysql.connector.connect(host=host, **DB_CONFIG)
         if conn.is_connected():
             print(f"Connected to {host}")
