@@ -158,6 +158,21 @@ def metrics():
             count = proxy_collection.count_documents({"event": event})
             lines.append(f'proxy_log_errors_total{{event="{event}"}} {count}')
 
+        # FAILOVER EVENTS
+        failover_count = proxy_collection.count_documents({"event": "failover"})
+        lines.append(f'proxy_failover_events_total {failover_count}')
+
+        # WHICH DATABASE IS BEING USED
+        latest_up_event = proxy_collection.find_one(
+            {"event": "up"},
+            sort=[("timestamp", -1)]
+        )
+
+        if latest_up_event and latest_up_event.get("db_target") == "mysql-replica":
+            lines.append("mysql_replica_in_use 1")
+        else:
+            lines.append("mysql_replica_in_use 0")
+
     except Exception as e:
         lines.append(f'# MongoDB error: {str(e)}')
 
