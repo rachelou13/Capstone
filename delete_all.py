@@ -28,16 +28,16 @@ def delete_resources():
                 check=False
             )
             if result.returncode != 0:
-                print(f"Failed to delete resources in {directory}")
-                print(f"Error: {result.stderr}")
+                print(f"❌ Failed to delete resources in {directory}")
+                print(f"⚠️ Error: {result.stderr}")
             else:
-                print(f"Successfully deleted resources in {directory}")
+                print(f"✅ Successfully deleted resources in {directory}")
         except Exception as e:
-            print(f"Error deleting resources in {directory}: {e}")
+            print(f"⚠️ Error deleting resources in {directory}: {e}")
 
 def stop_metrics_scraper():
     try:
-        print("Stopping metrics-scraper deployment...")
+        print("⏳ Stopping metrics-scraper deployment...")
         #Scale down the deployment to 0 replicas
         result = subprocess.run(
             ["kubectl", "scale", "deployment", "metrics-scraper", "--replicas=0"],
@@ -47,14 +47,14 @@ def stop_metrics_scraper():
         )
         
         if result.returncode != 0:
-            print(f"Failed to stop metrics-scraper deployment")
-            print(f"Error: {result.stderr}")
+            print(f"❌ Failed to stop metrics-scraper deployment")
+            print(f"⚠️ Error: {result.stderr}")
             return False
         else:
-            print(f"Successfully stopped metrics-scraper deployment")
+            print(f"✅ Successfully stopped metrics-scraper deployment")
             return True
     except Exception as e:
-        print(f"Error stopping metrics-scraper deployment: {e}")
+        print(f"⚠️ Error stopping metrics-scraper deployment: {e}")
         return False
 
 def main():
@@ -64,14 +64,14 @@ def main():
     
     #Allow time for scraper to shut down
     if scraper_stopped:
-        print("Waiting for scraper to finish...")
+        print("⏳ Waiting for scraper to finish...")
         time.sleep(5)
     
     #Delete Kubernetes resources
     print("\n" + title_separator + " DELETING K8S CLUSTER " + title_separator + "\n")
     delete_resources()
     
-    print("Cleanup completed")
+    print("\n✅ Cleanup completed")
 
 if __name__ == "__main__":
     main()

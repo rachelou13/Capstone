@@ -11,25 +11,6 @@ from python.utils.kafka_producer import CapstoneKafkaProducer
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def delete_pod(api_client, pod_name, namespace):
-    try:
-        core_v1 = client.CoreV1Api(api_client)
-        logger.info(f"Deleting pod {namespace}/{pod_name}")
-        
-        #Force delete pod
-        core_v1.delete_namespaced_pod(
-            name=pod_name,
-            namespace=namespace,
-            body=client.V1DeleteOptions(
-                grace_period_seconds=0,
-                propagation_policy="Background"
-            )
-        )
-        return True
-    except Exception as e:
-        logger.error(f"Failed to delete pod {namespace}/{pod_name}: {e}")
-        return False
-
 def get_pod_controller(api_client, pod_name, namespace):
     try:
         core_v1 = client.CoreV1Api(api_client)
@@ -138,10 +119,6 @@ def restart_controller(api_client, controller_type, controller_name, namespace):
     except Exception as e:
         logger.error(f"Failed to restart {controller_type} {namespace}/{controller_name}: {e}")
         return False
-
-def restart_deployment(api_client, deployment_name, namespace):
-    """Legacy method kept for compatibility"""
-    return restart_controller(api_client, "Deployment", deployment_name, namespace)
 
 def wait_for_pod_recreation(api_client, pod_name, namespace, timeout=120):
     core_v1 = client.CoreV1Api(api_client)
@@ -281,37 +258,24 @@ def main():
         #If we have a controller, scale it to 0 first
         if controller_type and controller_name:
             original_replicas = scale_controller(api_client, controller_type, controller_name, namespace, 0)
-            
+            logger.info("Scaled mysql-primary to 0")
+
             if original_replicas is None:
                 raise Exception(f"Failed to scale {controller_type} to zero")
                 
             #Give Kubernetes a moment to process the scaling
             time.sleep(5)
-        
-        apps_v1 = client.AppsV1Api(api_client)
-
-        #Scale down to 0
-        apps_v1.patch_namespaced_stateful_set(
-            name="mysql-primary",
-            namespace="default",
-            body={"spec": {"replicas": 0}}
-        )
-        logger.info("💥 Scaled mysql-primary to 0")
-
         #Wait for specified duration
-        logger.info(f"⏳ Waiting for {wait_duration} seconds before scaling up...")
+        logger.info(f"Waiting for {wait_duration} seconds before scaling up...")
         time.sleep(wait_duration)
 
         # Scale up to 1
-        apps_v1.patch_namespaced_stateful_set(
-            name="mysql-primary",
-            namespace="default",
-            body={"spec": {"replicas": 1}}
-        )
-        logger.info("🚀 Scaled mysql-primary back to 1")
+        _ = scale_controller(api_client, controller_type, controller_name, namespace, original_replicas)
+        logger.info("Scaled mysql-primary back to original size")
+        time.sleep(5)
 
         #Optional: restart annotation
-        restart_successful = restart_controller(api_client, "StatefulSet", "mysql-primary", "default")
+        restart_successful = restart_controller(api_client, controller_type, controller_name, namespace)
 
     except Exception as e:
         logger.error(f"Unexpected error during pod deletion experiment: {e}")

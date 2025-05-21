@@ -23,7 +23,7 @@ def get_k8s_client():
         config.load_kube_config()
         return client.CoreV1Api()
     except Exception as e:
-        print(f"Error initializing Kubernetes client: {e}")
+        print(f"⚠️ Error initializing Kubernetes client: {e}")
         print("Make sure you have the correct kubeconfig and kubernetes Python package installed.")
         return None
 
@@ -93,13 +93,13 @@ def select_pod(k8s_client, pod_name=""):
             return None
             
         if not pod_name:
-            print("Pod name cannot be empty. Please try again.")
+            print("❌ Pod name cannot be empty. Please try again.")
             continue
             
         matching_pods = find_pod_by_name(k8s_client, pod_name)
         
         if not matching_pods:
-            print("No pods match that name. Please try again.")
+            print("❌ No pods match that name. Please try again.")
             pod_name=""
             continue
             
@@ -115,7 +115,7 @@ def select_pod(k8s_client, pod_name=""):
             continue
             
         #Multiple matches - display list for selection
-        print("\nMultiple pods match your input. Please select one:")
+        print("\n❔ Multiple pods match your input. Please select one:")
         for i, pod in enumerate(matching_pods, 1):
             print(f"{i}. {pod['namespace']}/{pod['name']} ({pod['status']})")
             
@@ -136,9 +136,9 @@ def select_pod(k8s_client, pod_name=""):
                 if confirm == 'y':
                     return selected_pod
             else:
-                print("Invalid selection. Please try again.")
+                print("❌ Invalid selection. Please try again.")
         except ValueError:
-            print("Please enter a valid number.")
+            print("❌ Please enter a valid number.")
 
 def run_network_partition(pod_info):
     print("\n" + title_separator + " NETWORK PARTITION EXPERIMENT " + title_separator  + "\n")

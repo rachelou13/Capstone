@@ -16,7 +16,7 @@ def get_k8s_client():
         config.load_kube_config()
         return client.CoreV1Api()
     except Exception as e:
-        print(f"Error initializing Kubernetes client: {e}")
+        print(f"⚠️ Error initializing Kubernetes client: {e}")
         print("Make sure you have the correct kubeconfig and kubernetes Python package installed.")
         return None
 
@@ -39,7 +39,7 @@ def find_pod_by_name(name_pattern, k8s_client):
         
         return matching_pods
     except Exception as e:
-        print(f"Error finding pods: {e}")
+        print(f"⚠️ Error finding pods: {e}")
         return []
 
 def select_pod(k8s_client):
@@ -55,7 +55,7 @@ def select_pod(k8s_client):
         matching_pods = find_pod_by_name(pod_name, k8s_client)
         
         if not matching_pods:
-            print("No pods match that name. Please try again.")
+            print("❌ No pods match that name. Please try again.")
             continue
             
         if len(matching_pods) == 1:
@@ -71,7 +71,7 @@ def select_pod(k8s_client):
             continue
             
         #Multiple matches - display list for selection
-        print("\nMultiple pods match your input. Please select one:")
+        print("\n❔ Multiple pods match your input. Please select one:")
         for i, pod in enumerate(matching_pods, 1):
             print(f"{i}. {pod['namespace']}/{pod['name']} ({pod['status']})")
             
@@ -93,13 +93,13 @@ def select_pod(k8s_client):
                 if confirm == 'y':
                     return selected_pod
             else:
-                print("Invalid selection. Please try again.")
+                print("❌ Invalid selection. Please try again.")
         except ValueError:
-            print("Please enter a valid number.")
+            print("❌ Please enter a valid number.")
 
 def create_metrics_scraper_config(pod_info, scrape_interval=5):
     try:
-        print("Creating metrics scraper configuration...")
+        print("⏳ Creating metrics scraper configuration...")
         
         #Create a ConfigMap for storing pod info - add a proper name field
         configmap_yaml = f"""
@@ -113,33 +113,42 @@ def create_metrics_scraper_config(pod_info, scrape_interval=5):
                 TARGET_POD_UID: "{pod_info['uid']}"
                 SCRAPE_INTERVAL: "{scrape_interval}"
         """
-        #ADD CHMOD LINE TO ENSURE WRITE PERMISSIONS
-        
+        # Try writing to /tmp first, fall back to current directory if needed
+        config_file_path = '/tmp/metrics-scraper-config.yaml'
+        try:
+            # Test if we can write to the directory
+            with open(config_file_path, 'w') as test_file:
+                test_file.write('test')
+        except PermissionError:
+            # Fall back to current directory
+            config_file_path = './metrics-scraper-config.yaml'
+            print(f"⚠️ Cannot write to /tmp, using current directory instead: {config_file_path}")
+
         #Save ConfigMap YAML to a temporary file
-        with open('/tmp/metrics-scraper-config.yaml', 'w') as f:
+        with open(config_file_path, 'w') as f:
             f.write(configmap_yaml)
         
         #Apply the ConfigMap
         try:
             result = subprocess.run(
-                ["kubectl", "apply", "-f", "/tmp/metrics-scraper-config.yaml"],
+                ["kubectl", "apply", "-f", config_file_path],
                 capture_output=True,
                 text=True,
                 check=False
             )
             if result.returncode != 0:
-                print(f"Failed to create metrics scraper ConfigMap")
-                print(f"Error: {result.stderr}")
+                print(f"❌ Failed to create metrics scraper ConfigMap")
+                print(f"⚠️ Error: {result.stderr}")
                 return False
             else:
-                print(f"Successfully created metrics scraper ConfigMap")
+                print(f"✅ Successfully created metrics scraper ConfigMap")
                 return True
         except Exception as e:
-            print(f"Error creating metrics scraper ConfigMap: {e}")
+            print(f"⚠️ Error creating metrics scraper ConfigMap: {e}")
             return False
             
     except Exception as e:
-        print(f"Failed to set up metrics scraper configuration: {e}")
+        print(f"❌ Failed to set up metrics scraper configuration: {e}")
         return False
 
 def update_metrics_scraper_deployment(pod_info):
@@ -154,16 +163,16 @@ def update_metrics_scraper_deployment(pod_info):
         )
         
         if result.returncode != 0:
-            print(f"Failed to update metrics scraper deployment")
-            print(f"Error: {result.stderr}")
+            print(f"❌ Failed to update metrics scraper deployment")
+            print(f"⚠️ Error: {result.stderr}")
             return False
         else:
-            print(f"Successfully updated metrics scraper deployment")
+            print(f"✅ Successfully updated metrics scraper deployment")
             # Restart the deployment to apply changes
             subprocess.run(["kubectl", "rollout", "restart", "deployment", "metrics-scraper"])
             return True
     except Exception as e:
-        print(f"Error updating metrics scraper deployment: {e}")
+        print(f"⚠️ Error updating metrics scraper deployment: {e}")
         return False
 
 def apply_resources():
@@ -186,18 +195,18 @@ def apply_resources():
                 check=False
             )
             if result.returncode != 0:
-                print(f"Failed to apply resources in {directory}")
-                print(f"Error: {result.stderr}")
+                print(f"❌ Failed to apply resources in {directory}")
+                print(f"⚠️ Error: {result.stderr}")
             else:
-                print(f"Successfully applied resources in {directory}")
+                print(f"✅ Successfully applied resources in {directory}")
         except Exception as e:
-            print(f"Error applying resources in {directory}: {e}")
+            print(f"⚠️ Error applying resources in {directory}: {e}")
 
 def main():
     #K8s client setup
     k8s_client = get_k8s_client()
     if not k8s_client:
-        print("Failed to initialize Kubernetes client. Exiting.")
+        print("❌ Failed to initialize Kubernetes client. Exiting.")
         sys.exit(1)
     
     #Apply K8s resources
@@ -208,7 +217,7 @@ def main():
     print("\n" + title_separator + " SELECTING POD FOR MONITORING " + title_separator + "\n")
     pod_info = select_pod(k8s_client)
     if not pod_info:
-        print("No pod selected. Exiting without starting the metrics scraper.")
+        print("❌ No pod selected. Exiting without starting the metrics scraper.")
         return
     
     #Get scrape interval
@@ -224,8 +233,8 @@ def main():
     create_metrics_scraper_config(pod_info, scrape_interval)
     update_metrics_scraper_deployment(pod_info)
     
-    print("\nInfrastructure metrics scraper has been configured and deployed.")
-    print("\nYou can now use run_experiment.py to execute chaos experiments.")
+    print("\n✅ Infrastructure metrics scraper has been configured and deployed.")
+    print("\n💣 You can now use run_experiment.py to execute chaos experiments.")
 
 if __name__ == "__main__":
     main()
