@@ -182,13 +182,13 @@ def run_network_partition(pod_info):
     ]
     
     try:
-        print("\nExecuting experiment...")
+        print("\n⏳ Executing experiment...")
         subprocess.run(cmd, check=True)
-        print("\nExperiment completed successfully!")
+        print("\n✅ Experiment completed successfully!")
     except subprocess.CalledProcessError as e:
-        print(f"\nError running experiment: {e}")
+        print(f"\n⚠️ Error running experiment: {e}")
     except Exception as e:
-        print(f"\nUnexpected error: {e}")
+        print(f"\n⚠️ Unexpected error: {e}")
     
     input("\nPress Enter to continue...")
 
@@ -269,13 +269,13 @@ def run_resource_exhaustion(pod_info):
         cmd.extend(["-mc", "-mi", memory_intensity])
     
     try:
-        print("\nExecuting experiment...")
+        print("\n⏳ Executing experiment...")
         subprocess.run(cmd, check=True)
-        print("\nExperiment completed successfully!")
+        print("\n✅ Experiment completed successfully!")
     except subprocess.CalledProcessError as e:
-        print(f"\nError running experiment: {e}")
+        print(f"\n⚠️ Error running experiment: {e}")
     except Exception as e:
-        print(f"\nUnexpected error: {e}")
+        print(f"\n⚠️ Unexpected error: {e}")
     
     input("\nPress Enter to continue...")
 
@@ -308,18 +308,17 @@ def run_pod_termination(pod_info):
         cmd.extend(["-d", pod_info['deployment']])
 
     try:
-        print("\nExecuting experiment...")
+        print("\n⏳ Executing experiment...")
         subprocess.run(cmd, check=True)
-        print("\nExperiment completed successfully!")
+        print("\n✅ Experiment completed successfully!")
     except subprocess.CalledProcessError as e:
-        print(f"\nError running experiment: {e}")
+        print(f"\n⚠️ Error running experiment: {e}")
     except Exception as e:
-        print(f"\nUnexpected error: {e}")
+        print(f"\n⚠️ Unexpected error: {e}")
     
     input("\nPress Enter to continue...")
 
 def run_process_termination(pod_info):
-    print("\n" + title_separator + " PROCESS TERMINATION EXPERIMENT " + title_separator  + "\n")
     print("Parameters (press Enter to skip):")
     
     #Get container ID prefix (optional)
@@ -349,13 +348,13 @@ def run_process_termination(pod_info):
         cmd.extend(["-p", process_pattern])
     
     try:
-        print("\nExecuting experiment...")
+        print("\n⏳ Executing experiment...")
         subprocess.run(cmd, check=True)
-        print("\nExperiment completed successfully!")
+        print("\n✅ Experiment completed successfully!")
     except subprocess.CalledProcessError as e:
-        print(f"\nError running experiment: {e}")
+        print(f"\n⚠️ Error running experiment: {e}")
     except Exception as e:
-        print(f"\nUnexpected error: {e}")
+        print(f"\n⚠️ Unexpected error: {e}")
     
     input("\nPress Enter to continue...")
 
