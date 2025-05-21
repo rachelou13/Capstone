@@ -317,6 +317,10 @@ SELECT COUNT(*) AS total FROM infra_metrics WHERE metric_level = 'container';
 SELECT * FROM infra_metrics WHERE cpu_percent > 90 OR mem_percent > 50;
 ```
 
+## Closing the project
+1. To exit the run_experiment.py script, enter 0 while on the main menu
+2. To close down the cluster, run ```python delete_all.py``` from the main project folder
+
 # Credits
 Designed and built by Lucas Baker, Rachel Cox, Henry Hewitt, and Lukas McCain for the the February 2025 cohort of the PNC/TEKsystems Early Career SRE bootcamp. 
 
