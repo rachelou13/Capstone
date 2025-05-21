@@ -4,7 +4,7 @@
 
 Before deploying Kafka to the local Kubernetes cluster, make sure:
 
-### 1. Minikube Is Running
+### 1. Minikube Is Running
 
 ```bash
 minikube status
@@ -123,7 +123,7 @@ By default, Kafka is configured to **automatically create topics** when a produc
 
 This can be convenient during development, but you may want to **disable it** in certain scenarios.
 
-### 🔧 To Disable Auto Topic Creation
+### To Disable Auto Topic Creation
 
 You can prevent Kafka from creating topics automatically by setting the following environment variable in your Kafka manifest (e.g., `kafka-statefulset.yaml`):
 
