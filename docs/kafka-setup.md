@@ -21,7 +21,7 @@ kubectl create namespace staging
 
 ---
 
-### ✅ Now, To Add It:
+### Now, To Add It:
 
 1. Run:
    ```bash
@@ -31,7 +31,7 @@ kubectl create namespace staging
 
 ##  Deploy Kafka in KRaft Mode
 
-### Step 1: Apply Kafka Headless Service, Kafka NodePort Service
+### Step 1: Apply Kafka Headless Service and Kafka NodePort Service
 
 ```bash
 kubectl apply -f k8s/services/kafka-headless.yaml
