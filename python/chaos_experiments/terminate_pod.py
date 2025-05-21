@@ -251,7 +251,7 @@ def main():
         controller_name = deployment_name
         logger.info(f"Using provided deployment: {deployment_name}")
     else:
-        # Auto-detect controller only if deployment_name is None
+        #Auto-detect controller only if deployment_name is None
         controller_type, controller_name = get_pod_controller(api_client, pod_name, namespace)
         if controller_type and controller_name:
             logger.info(f"Auto-detected pod controller: {controller_type}/{controller_name}")
@@ -290,7 +290,7 @@ def main():
         
         apps_v1 = client.AppsV1Api(api_client)
 
-        # Scale down to 0
+        #Scale down to 0
         apps_v1.patch_namespaced_stateful_set(
             name="mysql-primary",
             namespace="default",
@@ -298,7 +298,7 @@ def main():
         )
         logger.info("💥 Scaled mysql-primary to 0")
 
-        # Wait for specified duration
+        #Wait for specified duration
         logger.info(f"⏳ Waiting for {wait_duration} seconds before scaling up...")
         time.sleep(wait_duration)
 
@@ -310,7 +310,7 @@ def main():
         )
         logger.info("🚀 Scaled mysql-primary back to 1")
 
-        # Optional: restart annotation
+        #Optional: restart annotation
         restart_successful = restart_controller(api_client, "StatefulSet", "mysql-primary", "default")
 
     except Exception as e:

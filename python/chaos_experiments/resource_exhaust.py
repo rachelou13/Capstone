@@ -167,7 +167,7 @@ def memory_stress_in_pod(api_client, pod_info, container_names, intensity, durat
             "trap cleanup EXIT INT TERM; "
             
             #Calculate chunk size - use smaller chunks for better memory pressure
-            "CHUNK_SIZE_MB=32; "  #Using 32MB chunks
+            "CHUNK_SIZE_MB=64; "  #Using 64MB chunks
             f"NUM_CHUNKS=$(({memory_to_allocate_mb} / $CHUNK_SIZE_MB + 1)); "
             f"LAST_CHUNK_SIZE=$(({memory_to_allocate_mb} % $CHUNK_SIZE_MB)); "
             
