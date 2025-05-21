@@ -33,7 +33,7 @@ kafka-topics.sh --bootstrap-server kafka-0.kafka-headless.default.svc.cluster.lo
 exit
 COMMENT
 
-sh apply-all.sh
+python apply_all.py
 
 #Wait for all containers to start
 sleep 10

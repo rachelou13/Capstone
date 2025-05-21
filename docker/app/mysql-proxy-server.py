@@ -58,7 +58,7 @@ def connect_to_database(host):
         return None
 
     try:
-        conn = mysql.connector.connect(host=host, **DB_CONFIG)
+        conn = mysql.connector.connect(host=host, **DB_CONFIG, connect_timeout=5)
         if conn.is_connected():
             print(f"Connected to {host}")
             return conn
@@ -163,13 +163,23 @@ def monitor_and_failover():
 
     while True:
         print(f"Checking {current_host}...")
-        connection = connect_to_database(current_host)
-
-        if connection:
-            try:
+        connection = None
+        
+        try:
+            # Try to connect with a short timeout
+            connection = connect_to_database(current_host)
+            
+            if connection and connection.is_connected():
+                #Successfully connected, test with a simple query
                 cursor = connection.cursor()
                 cursor.execute("SELECT 1")
-
+                #Important - always fetch the result
+                cursor.fetchone()
+                cursor.close()
+                
+                print(f"{current_host} is alive")
+                
+                #Log success to Kafka
                 if producer:
                     producer.send(KAFKA_TOPIC, {
                         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -178,23 +188,20 @@ def monitor_and_failover():
                         "db_target": current_host,
                         "source": "proxy-server"
                     }).get(timeout=5)
-
-                print(f"{current_host} is alive")
-
-                # If we’re currently on the replica, check if the primary has recovered
+                
+                #If we're on replica, check if primary is back
                 if current_host == REPLICA_HOST:
                     print("Checking if primary is back...")
-                    if connect_to_database(PRIMARY_HOST):
+                    primary_conn = connect_to_database(PRIMARY_HOST)
+                    if primary_conn:
                         print("Primary is back. Reconfiguring...")
+                        primary_conn.close()
                         configure_as_replica(REPLICA_HOST, PRIMARY_HOST)
                         current_host = PRIMARY_HOST
-
-                time.sleep(10)
-
-            except Error as e:
-                print(f"DB error on {current_host}: {e}")
-                connection.close()
-
+            else:
+                #Failed to connect
+                print(f"Connection failed for {current_host}. Switching...")
+                
                 if producer:
                     producer.send(KAFKA_TOPIC, {
                         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -203,22 +210,31 @@ def monitor_and_failover():
                         "db_target": current_host,
                         "source": "proxy-server"
                     }).get(timeout=5)
-
+                
                 switch_to_other()
-        else:
-            print(f"Connection failed for {current_host}. Switching...")
-
+                
+        except Error as e:
+            print(f"DB error on {current_host}: {e}")
+            
             if producer:
                 producer.send(KAFKA_TOPIC, {
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                     "level": "ERROR",
                     "event": "down",
-                    "db_target": current_host,
+                    "db_target": current_host, 
                     "source": "proxy-server"
                 }).get(timeout=5)
-
+                
             switch_to_other()
-
+        finally:
+            #Always close connection if it exists
+            if connection:
+                try:
+                    connection.close()
+                except:
+                    pass
+                    
+        #Sleep before next check
         time.sleep(5)
 
 
