@@ -56,7 +56,7 @@ def find_and_terminate_process(api_client, pod_info, container_names, pod_uid, c
         "  pid=$(basename \"$pid_dir\"); "
         "  name=$(cat \"$pid_dir/status\" 2>/dev/null | grep '^Name:' | cut -f2- | tr -d '[:space:]'); "
         "  cmdline=$(cat \"$pid_dir/cmdline\" 2>/dev/null | tr '\\0' ' ' | sed 's/[[:space:]]*$//'); "
-        "  echo \"${pid}	${name}	${cmdline}\"; "
+        "  echo \"${pid} ${name} ${cmdline}\"; "
         "done"
     ]
     

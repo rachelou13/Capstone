@@ -151,13 +151,106 @@ Follow the prompts and execute the experiments you would like. Entering 0 at any
 Running **Network Partition** experiment with default parameters:
 
 ```sh
+#Run experiment
+python run_experiment.py
 
+#Select experiment from the menu
+====== CHAOS EXPERIMENT LAUNCHER ======
+
+Available experiments:
+1. Process Termination
+2. Pod Termination
+3. Resource Exhaustion (CPU stress test)
+4. Network Partition
+0. Exit
+Select an option: 4
+
+#Confirm selection
+Targeting the below pod for network partition:
+
+Pod: python-proxy-app-54b68fb4c7-r6qcz in namespace default
+Status: Running
+UID: 468306a3-a24e-4978-b6e1-e225994d5416
+
+Confirm selection? (y/n): y
+
+#Enter experiments parameters (Optional)
+====== NETWORK PARTITION EXPERIMENT ======
+
+Parameters (press Enter to use default):
+Target service to block [default: mysql-primary]:
+Port to block [default: 3306]:
+Protocol (tcp/udp/icmp) [default: tcp]:
+Duration in seconds [default: 60]:
+
+Running Network Partition experiment with the following parameters:
+Pod: default/python-proxy-app-54b68fb4c7-r6qcz
+UID: 468306a3-a24e-4978-b6e1-e225994d5416
+Target Service: mysql-primary
+Port: 3306
+Protocol: tcp
+Duration: 60 seconds
+
+Execute experiment? (y/n): y
+
+#Run the experiment
+⏳ Executing experiment...
+
+✅ Experiment completed successfully!
+
+Press Enter to continue...
 ```
 
 Running **Resource Exhaustion** experiment with custom parameters:
 
 ```sh
+#Run experiment
+python run_experiment.py
 
+#Select experiment from the menu
+====== CHAOS EXPERIMENT LAUNCHER ======
+
+Available experiments:
+1. Process Termination
+2. Pod Termination
+3. Resource Exhaustion (CPU stress test)
+4. Network Partition
+0. Exit
+Select an option: 3
+
+#Specify target pod
+Enter pod name (or part of name) to target (0 to return to main menu): mysql-p
+
+Pod: mysql-primary-0 in namespace default
+Status: Running
+UID: 6e802b8a-d3ec-443e-9619-a1dc2c62f23e
+
+Confirm selection? (y/n): y
+
+#Enter experiments parameters (Optional)
+====== RESOURCE EXHAUSTION EXPERIMENT ======
+
+Parameters (press Enter to use default):
+Exhaust CPU? (y/n) [default: y]: n
+Exhaust memory? (y/n) [default: n]: y
+Memory intensity percentage (1-100) [default: 80]: 95
+Duration in seconds [default: 30]: 90
+
+Running Resource Exhaustion experiment with the following parameters:
+Pod: default/mysql-primary-0
+UID: 6e802b8a-d3ec-443e-9619-a1dc2c62f23e
+CPU Exhaustion: Disabled
+Memory Exhaustion: Enabled (Intensity: 95%)
+Duration: 90 seconds
+
+Execute experiment? (y/n): y
+
+#Run the experiment
+⏳ Executing experiment...
+
+✅ Experiment completed successfully!
+
+Press Enter to continue...
 ```
 
 ## Viewing the Dashboard
@@ -189,6 +282,14 @@ In your terminal...
 
 ### Examples
 ```sh
+#Find all the documents from the network partition experiments
+db.chaos_events.find({source: "network_partition"})
+
+#Find the number of failover events that have occurred
+db.proxy_logs.countDocuments({event: "failover"})
+
+#Find the number of errors
+db.chaos_events.countDocuments({event: "error"})
 ```
 
 ## Querying MySQL Directly
@@ -206,6 +307,14 @@ In your terminal...
 
 ### Examples
 ```sh
+#Find average CPU and average memory utilization for the containers
+SELECT AVG(cpu_percent) AS avg_cpu, AVG(mem_percent) AS avg_mem FROM infra_metrics WHERE metric_level = 'container'
+
+#Calculate total number of scrapes
+SELECT COUNT(*) AS total FROM infra_metrics WHERE metric_level = 'container';
+
+#Find all the entries where CPU or memory spike
+SELECT * FROM infra_metrics WHERE cpu_percent > 90 OR mem_percent > 50;
 ```
 
 # Credits
