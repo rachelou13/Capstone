@@ -194,9 +194,9 @@ Duration: 60 seconds
 Execute experiment? (y/n): y
 
 #Run the experiment
-⏳ Executing experiment...
+Executing experiment...
 
-✅ Experiment completed successfully!
+Experiment completed successfully!
 
 Press Enter to continue...
 ```
@@ -246,9 +246,9 @@ Duration: 90 seconds
 Execute experiment? (y/n): y
 
 #Run the experiment
-⏳ Executing experiment...
+Executing experiment...
 
-✅ Experiment completed successfully!
+Experiment completed successfully!
 
 Press Enter to continue...
 ```
